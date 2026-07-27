@@ -6,7 +6,7 @@ disponibles en Scryfall.
 
 ## Funciones
 
-- Permite pegar una exportación de texto o subir un archivo `.txt`.
+- Permite pegar una exportación de texto.
 - Busca primero la misma edición y número de coleccionista en español.
 - Si no existe, busca esa misma edición en inglés.
 - Si tampoco existe, busca otra impresión oficial española.
@@ -36,7 +36,7 @@ disponibles en Scryfall.
 
 1. Abre el mazo en Moxfield.
 2. Utiliza una exportación de texto con cantidad y nombre.
-3. Pégala en **Lista del mazo** o sube el archivo `.txt`.
+3. Pégala en **Lista del mazo**.
 4. Pulsa de nuevo **Preparar ZIP**.
 
 Ejemplo:
@@ -175,7 +175,6 @@ Cloudflare.
 Ahora existen dos formas estables de introducir el mazo:
 
 1. Pegar directamente la exportación de texto.
-2. Subir un archivo `.txt` con esa exportación.
 
 Se conservan las cantidades, edición, número de coleccionista y marcas como
 `*F*`, que se ignoran para seleccionar la imagen.

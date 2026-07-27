@@ -20,7 +20,7 @@ st.set_page_config(
 
 st.title("🃏 Moxfield Cartas ES")
 st.write(
-    "Pega o sube la exportación de tu mazo y descarga todas sus cartas, "
+    "Pega la exportación de tu mazo y descarga todas sus cartas, "
     "priorizando imágenes oficiales en español y de buena calidad."
 )
 
@@ -29,7 +29,7 @@ with st.expander("Cómo obtener la lista", expanded=False):
         """
 1. Abre el mazo en Moxfield.
 2. Utiliza la opción de exportar o copiar la lista como texto.
-3. Pega el contenido en la aplicación o sube un archivo `.txt`.
+3. Pega el contenido en la aplicación.
 4. El perfil elegido combinará edición, idioma y calidad.
 5. Cada copia del listado generará su propio archivo.
 6. Las cartas de doble cara generarán una imagen por cada cara y copia.
@@ -187,7 +187,7 @@ with right:
 
 def load_cards() -> tuple[str, list[DeckCard]]:
     if not decklist_text.strip():
-        raise ValueError("Pega una lista o sube un archivo de texto.")
+        raise ValueError("Pega una lista de mazo.")
 
     cards = parse_exported_decklist(decklist_text)
     if not include_sideboard:
