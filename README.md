@@ -345,3 +345,10 @@ mantiene una frecuencia inferior a diez peticiones por segundo.
 Si Scryfall continúa sin responder después de los reintentos, la carta se marca
 como **Error temporal de Scryfall** y el análisis continúa con el resto del
 mazo, en lugar de perder todo el progreso.
+
+
+## Reverso fijo
+
+La aplicación utiliza siempre el reverso estándar de Magic para las cartas de
+una sola cara. El selector de reversos personalizados, neutros y de MPCFill se
+ha retirado de la interfaz.

@@ -12,14 +12,7 @@ import pandas as pd
 import streamlit as st
 
 from mtg_downloader.archive import build_zip, cache_stats, prefetch_cards
-from mtg_downloader.backs import (
-    BackSpec,
-    custom_url_back,
-    mpcfill_back,
-    neutral_back,
-    no_back,
-    standard_magic_back,
-)
+from mtg_downloader.backs import standard_magic_back
 from mtg_downloader.deck_view import (
     filtered_indices,
     gallery_printing_label,
@@ -1397,63 +1390,6 @@ def render_workspace() -> None:
         render_review_panel()
 
 
-def render_back_selector() -> BackSpec:
-    back_label = st.selectbox(
-        "Reverso para cartas de una sola cara",
-        [
-            "Sin reverso",
-            "Reverso estándar de Magic",
-            "Reverso neutro",
-            "URL personalizada",
-            "Diseño MPCFill",
-        ],
-    )
-    if back_label == "Sin reverso":
-        return no_back()
-    if back_label == "Reverso estándar de Magic":
-        return standard_magic_back()
-    if back_label == "Reverso neutro":
-        return neutral_back()
-    if back_label == "URL personalizada":
-        url = st.text_input("URL de la imagen del reverso")
-        if not url:
-            return no_back()
-        try:
-            return custom_url_back(url)
-        except ValueError as exc:
-            st.warning(str(exc))
-            return no_back()
-
-    query = st.text_input(
-        "Buscar reverso en MPCFill",
-        value="lotus",
-        key="mpc_back_query",
-    )
-    st.caption(
-        "Los reversos de MPCFill se recortan automáticamente para mantener el mismo comportamiento que el resto de diseños MPCFill."
-    )
-    if not query.strip():
-        return no_back()
-    try:
-        with MpcFillClient(mpc_cache_dir()) as client:
-            candidates = client.search_cardbacks(query, minimum_dpi=300, max_results=6)
-            if not candidates:
-                st.info("No se encontraron reversos MPCFill.")
-                return no_back()
-            selected = st.selectbox(
-                "Diseño de reverso",
-                options=list(range(len(candidates))),
-                format_func=lambda index: mpc_candidate_label(candidates[index]),
-                key="mpc_back_candidate",
-            )
-            preview = client.preview_bytes(candidates[selected], crop_mode=CROP_AUTO)
-            st.image(preview, width=150)
-            return mpcfill_back(candidates[selected], crop_mode=CROP_AUTO)
-    except MpcFillError as exc:
-        st.warning(f"MPCFill no está disponible: {exc}")
-        return no_back()
-
-
 def render_export_panel() -> None:
     cards: list[ResolvedCard] = st.session_state["resolved_cards"]
     st.subheader("4. Validar y exportar")
@@ -1464,6 +1400,7 @@ def render_export_panel() -> None:
             "Paquete MPC / dúplex",
             "PDF A4 — 9 cartas por página",
         ],
+        index=2,
     )
     cut_lines = True
     cut_line_style = "ticks"
@@ -1533,10 +1470,13 @@ def render_export_panel() -> None:
                 ),
             )
 
-    with st.expander("Configurar reversos", expanded=False):
-        back_spec = render_back_selector()
+    back_spec = standard_magic_back()
+    st.caption(
+        "Reverso estándar de Magic aplicado siempre a las cartas "
+        "de una sola cara."
+    )
 
-    include_backs = back_spec.mode != "none"
+    include_backs = True
     validation = validate_deck(cards, back_spec=back_spec)
     metrics = st.columns(6)
     metrics[0].metric("Copias", validation.expected_cards)

@@ -92,10 +92,10 @@ def test_validation_backs_and_export_profiles_exist() -> None:
     assert "Paquete MPC / dúplex" in app
     assert "PDF A4 — 9 cartas por página" in app
     assert "Reverso estándar de Magic" in app
-    assert "Reverso neutro" in app
-    assert "URL personalizada" in app
-    assert "Diseño MPCFill" in app
-    assert "Recorte del reverso MPCFill" not in app
+    assert "back_spec = standard_magic_back()" in app
+    assert "Reverso neutro" not in app
+    assert "URL personalizada" not in app
+    assert "Diseño MPCFill" not in app
     assert "validate_deck(" in app
 
 
@@ -191,3 +191,29 @@ def test_analysis_handles_temporary_scryfall_errors() -> None:
     assert "Error temporal de Scryfall" in app
     assert "temporary_failures" in app
     assert "retry_callback=show_scryfall_retry" in app
+
+
+
+def test_magic_back_is_always_used_without_selector() -> None:
+    app = app_text()
+    assert "back_spec = standard_magic_back()" in app
+    assert "include_backs = True" in app
+    assert "Reverso estándar de Magic aplicado siempre" in app
+    assert "def render_back_selector" not in app
+    assert "Configurar reversos" not in app
+    assert "Reverso para cartas de una sola cara" not in app
+
+
+
+def test_pdf_is_the_default_export_format() -> None:
+    app = app_text()
+    expected = """export_format = st.selectbox(
+        "Formato de salida",
+        [
+            "ZIP de imágenes individuales",
+            "Paquete MPC / dúplex",
+            "PDF A4 — 9 cartas por página",
+        ],
+        index=2,
+    )"""
+    assert expected in app
