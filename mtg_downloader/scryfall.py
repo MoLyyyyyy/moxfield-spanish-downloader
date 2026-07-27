@@ -47,7 +47,7 @@ class ScryfallClient:
             timeout=40.0,
             follow_redirects=True,
             headers={
-                "User-Agent": "MoxfieldCartasES/0.1 (aplicacion personal)",
+                "User-Agent": "ProxyMaker/0.1 (aplicacion personal)",
                 "Accept": "application/json;q=0.9,*/*;q=0.8",
             },
         )
@@ -346,7 +346,7 @@ class ScryfallClient:
             response = self.client.get(
                 face.url,
                 headers={
-                    "User-Agent": "MoxfieldCartasES/0.4 (aplicacion personal)",
+                    "User-Agent": "ProxyMaker/0.4 (aplicacion personal)",
                     "Accept": "image/avif,image/webp,image/png,image/jpeg,*/*",
                 },
             )

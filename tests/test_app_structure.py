@@ -225,3 +225,13 @@ def test_decklist_placeholder_uses_real_line_breaks() -> None:
     assert '"Commander:\\n"' in app
     assert '"Commander:\\\\n"' not in app
     assert '"Deck:\\n"' in app
+
+
+
+def test_application_is_named_proxy_maker() -> None:
+    app = app_text()
+    assert 'page_title="Proxy Maker"' in app
+    assert 'st.title("🃏 Proxy Maker")' in app
+    assert "Moxfield Cartas ES" not in app
+    readme = Path("README.md").read_text(encoding="utf-8")
+    assert readme.startswith("# Proxy Maker")

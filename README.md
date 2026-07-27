@@ -1,4 +1,4 @@
-# Moxfield Cartas ES
+# Proxy Maker
 
 Aplicación que recibe una exportación de texto de Moxfield y genera un ZIP
 con las imágenes de las cartas, priorizando versiones oficiales en español

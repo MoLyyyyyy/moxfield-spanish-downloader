@@ -43,7 +43,7 @@ class MpcFillClient:
             timeout=50.0,
             follow_redirects=True,
             headers={
-                "User-Agent": "MoxfieldCartasES/0.2 (uso personal)",
+                "User-Agent": "ProxyMaker/0.2 (uso personal)",
                 "Accept": "application/json",
             },
         )

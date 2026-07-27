@@ -312,7 +312,7 @@ def _readme_text(
         1 for row in report if row["estado"] in {"No encontrada", "Sin imagen"}
     )
     return (
-        "Moxfield Cartas ES\n"
+        "Proxy Maker\n"
         "===================\n\n"
         f"Cartas totales de la lista: {total_cards}\n"
         f"Variantes de impresión: {len(report)}\n"

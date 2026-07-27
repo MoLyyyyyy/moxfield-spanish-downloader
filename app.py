@@ -58,12 +58,12 @@ from mtg_downloader.selections import (
 from mtg_downloader.validation import validate_deck
 
 st.set_page_config(
-    page_title="Moxfield Cartas ES",
+    page_title="Proxy Maker",
     page_icon="🃏",
     layout="wide",
 )
 
-st.title("🃏 Moxfield Cartas ES")
+st.title("🃏 Proxy Maker")
 
 if "app_step" not in st.session_state:
     st.session_state["app_step"] = (
