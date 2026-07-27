@@ -97,10 +97,7 @@ def group_deck(
 
 
 def gallery_printing_label(card: ResolvedCard) -> str:
-    provider = {
-        "mpcfill": "MPCFill",
-        "magiccardsinfo": "MagicCards.info",
-    }.get(card.provider, "Scryfall")
+    provider = "MPCFill" if card.provider == "mpcfill" else "Scryfall"
     set_code = (card.selected_set or "?").upper()
     collector = card.collector_number or "?"
     language = (card.language or "?").upper()

@@ -10,7 +10,6 @@ from urllib.parse import quote
 import httpx
 
 from .image_processing import process_mpc_image_bytes
-from .magiccardsinfo import MagicCardsInfoClient
 from .models import DeckCard, ImageFace, ResolvedCard
 
 SCRYFALL_API = "https://api.scryfall.com"
@@ -39,13 +38,8 @@ class ScryfallClient:
                 "Accept": "application/json",
             },
         )
-        self.magiccardsinfo = MagicCardsInfoClient(
-            cache_dir,
-            http_client=self.client,
-        )
 
     def close(self) -> None:
-        self.magiccardsinfo.close()
         self.client.close()
 
     def __enter__(self) -> "ScryfallClient":
@@ -226,9 +220,6 @@ class ScryfallClient:
                 candidates.extend(english_candidates)
 
         if not selected_pair:
-            selected_pair = self._find_magiccardsinfo_pair(card, candidates)
-
-        if not selected_pair:
             quality_error = (
                 "No se encontró una impresión con imagen de alta resolución."
                 if quality_mode == "highres_only" and candidates
@@ -245,13 +236,6 @@ class ScryfallClient:
             )
 
         status, selected = selected_pair
-        selected_pair = self._maybe_upgrade_selected_pair_with_magiccardsinfo(
-            card,
-            status,
-            selected,
-        )
-        if selected_pair is not None:
-            status, selected = selected_pair
         return self.resolve_from_candidate(card, selected, status=status)
 
     def resolve_from_candidate(
@@ -469,74 +453,6 @@ class ScryfallClient:
             if highres:
                 return highres
         return usable[0] if usable else None
-
-    def _find_magiccardsinfo_pair(
-        self,
-        card: DeckCard,
-        candidates: list[tuple[str, dict[str, Any]]],
-    ) -> tuple[str, dict[str, Any]] | None:
-        for status, candidate in candidates:
-            upgraded = self._maybe_upgrade_selected_pair_with_magiccardsinfo(
-                card,
-                status,
-                candidate,
-            )
-            if upgraded is not None:
-                return upgraded
-        return None
-
-    def _maybe_upgrade_selected_pair_with_magiccardsinfo(
-        self,
-        card: DeckCard,
-        status: str,
-        selected: dict[str, Any],
-    ) -> tuple[str, dict[str, Any]] | None:
-        if str(selected.get("_provider") or "scryfall") == "magiccardsinfo":
-            return None
-        if str(selected.get("lang") or "").casefold() != "es":
-            return None
-        if self._is_highres(selected):
-            return None
-        if selected.get("card_faces"):
-            return None
-
-        fallback = self._find_magiccardsinfo_fallback(card, selected)
-        if not fallback:
-            return None
-        return f"{status} · MagicCards.info", fallback
-
-    def _find_magiccardsinfo_fallback(
-        self,
-        card: DeckCard,
-        selected: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        try:
-            fallback = self.magiccardsinfo.find_spanish_scan(
-                name=str(
-                    selected.get("printed_name")
-                    or selected.get("name")
-                    or card.name
-                ),
-                set_code=str(
-                    selected.get("set")
-                    or card.set_code
-                    or ""
-                ) or None,
-                collector_number=str(
-                    selected.get("collector_number")
-                    or card.collector_number
-                    or ""
-                ) or None,
-            )
-        except Exception:
-            return None
-
-        if not fallback:
-            return None
-
-        merged = dict(selected)
-        merged.update(fallback)
-        return merged
 
     @staticmethod
     def _has_usable_image(card: dict[str, Any]) -> bool:

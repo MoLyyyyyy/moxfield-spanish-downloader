@@ -305,5 +305,13 @@ revisar y editar primero lo que necesita atención.
 Si Scryfall solo encuentra una impresión en español de baja resolución, la
 aplicación intenta mejorarla automáticamente con **MagicCards.info** antes de
 darla por válida. Este respaldo solo se usa para imágenes españolas low-res;
-las imágenes normales de Scryfall y los diseños de MPCFill siguen funcionando
+las imágenes de Scryfall y los diseños de MPCFill siguen funcionando
 igual que antes.
+
+
+### Rendimiento del perfil Solo español
+
+El perfil realiza una única resolución por carta. Primero comprueba las
+impresiones españolas y solo consulta inglés dentro de esa misma operación
+cuando no existe ninguna imagen española. No se consultan fuentes externas
+adicionales que puedan introducir esperas o redirecciones.
