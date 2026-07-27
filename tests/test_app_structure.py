@@ -160,3 +160,24 @@ def test_spanish_profile_uses_english_as_last_resort() -> None:
     assert "allow_english_if_missing=allow_english_if_missing" in app
     readme = Path("README.md").read_text(encoding="utf-8")
     assert "usa inglés como último recurso" in readme
+
+
+
+def test_app_uses_a_three_step_wizard() -> None:
+    app = app_text()
+    assert "1. Lista y opciones" in app
+    assert "2. Revisar versiones" in app
+    assert "3. Validar y exportar" in app
+    assert 'st.form("analysis_form")' in app
+    assert 'st.session_state["app_step"] = 2' in app
+    assert "Continuar a exportación →" in app
+    assert "← Volver a revisar" in app
+    assert "render_workspace()" in app
+    assert "render_export_panel()" in app
+
+
+def test_analysis_reuses_unchanged_results() -> None:
+    app = app_text()
+    assert "Se ha reutilizado el análisis anterior" in app
+    assert "requested_signature = current_signature()" in app
+    assert 'st.session_state.get("analysis_signature")' in app

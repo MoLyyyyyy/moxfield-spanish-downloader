@@ -63,33 +63,69 @@ class ScryfallClient:
 
         has_exact_printing = bool(card.set_code and card.collector_number)
         prefer_highres_search = quality_mode != "allow_lowres"
-        candidates: list[tuple[str, dict[str, Any]]] = []
+        first_usable: tuple[str, dict[str, Any]] | None = None
+        found_spanish = False
 
-        def add_candidate(status: str, candidate: dict[str, Any] | None) -> None:
-            if candidate and self._has_usable_image(candidate):
-                candidates.append((status, candidate))
+        def consider(
+            status: str,
+            candidate: dict[str, Any] | None,
+            *,
+            spanish: bool,
+        ) -> tuple[str, dict[str, Any]] | None:
+            nonlocal first_usable, found_spanish
+            if not candidate or not self._has_usable_image(candidate):
+                return None
 
-        if resolution_mode in {"exact_first", "exact_only"} and has_exact_printing:
-            add_candidate(
-                "Misma impresión en español",
+            pair = (status, candidate)
+            if first_usable is None:
+                first_usable = pair
+            if spanish:
+                found_spanish = True
+
+            if quality_mode == "allow_lowres":
+                return pair
+            if self._is_highres(candidate):
+                return pair
+            return None
+
+        def exact_candidate(
+            *,
+            language: str | None,
+            status: str,
+            spanish: bool,
+        ) -> tuple[str, dict[str, Any]] | None:
+            if not has_exact_printing:
+                return None
+            return consider(
+                status,
                 self._get_card_by_printing(
                     card.set_code or "",
                     card.collector_number or "",
-                    language="es",
+                    language=language,
                 ),
+                spanish=spanish,
             )
-            if allow_english_fallback:
-                add_candidate(
-                    "Misma impresión en inglés",
-                    self._get_card_by_printing(
-                        card.set_code or "",
-                        card.collector_number or "",
-                        language=None,
-                    ),
-                )
 
-        if resolution_mode == "exact_only":
-            if not has_exact_printing:
+        def flexible_candidate(
+            *,
+            language: str,
+            status: str,
+            spanish: bool,
+        ) -> tuple[str, dict[str, Any]] | None:
+            return consider(
+                status,
+                self._find_printing(
+                    card.name,
+                    language=language,
+                    prefer_highres=prefer_highres_search,
+                ),
+                spanish=spanish,
+            )
+
+        selected_pair: tuple[str, dict[str, Any]] | None = None
+
+        if resolution_mode in {"exact_first", "exact_only"}:
+            if not has_exact_printing and resolution_mode == "exact_only":
                 return ResolvedCard(
                     source=card,
                     status="Sin impresión exacta",
@@ -99,137 +135,83 @@ class ScryfallClient:
                     ),
                 )
 
-        elif resolution_mode == "exact_first":
-            add_candidate(
-                "Otra impresión en español",
-                self._find_printing(
-                    card.name,
-                    language="es",
-                    prefer_highres=prefer_highres_search,
-                ),
+            selected_pair = exact_candidate(
+                language="es",
+                status="Misma impresión en español",
+                spanish=True,
             )
-            if allow_english_fallback:
-                add_candidate(
-                    "Otra impresión en inglés",
-                    self._find_printing(
-                        card.name,
-                        language="en",
-                        prefer_highres=prefer_highres_search,
-                    ),
+            if not selected_pair and allow_english_fallback:
+                selected_pair = exact_candidate(
+                    language=None,
+                    status="Misma impresión en inglés",
+                    spanish=False,
                 )
 
-        elif resolution_mode == "flexible":
-            add_candidate(
-                "Impresión flexible en español",
-                self._find_printing(
-                    card.name,
-                    language="es",
-                    prefer_highres=prefer_highres_search,
-                ),
+        if not selected_pair and resolution_mode == "exact_first":
+            selected_pair = flexible_candidate(
+                language="es",
+                status="Otra impresión en español",
+                spanish=True,
             )
-            if allow_english_fallback:
-                add_candidate(
-                    "Impresión flexible en inglés",
-                    self._find_printing(
-                        card.name,
-                        language="en",
-                        prefer_highres=prefer_highres_search,
-                    ),
+            if not selected_pair and allow_english_fallback:
+                selected_pair = flexible_candidate(
+                    language="en",
+                    status="Otra impresión en inglés",
+                    spanish=False,
                 )
 
-        selected_pair: tuple[str, dict[str, Any]] | None = None
-        if quality_mode == "allow_lowres":
-            selected_pair = candidates[0] if candidates else None
-        else:
-            selected_pair = next(
-                (
-                    pair
-                    for pair in candidates
-                    if self._is_highres(pair[1])
-                ),
-                None,
+        if not selected_pair and resolution_mode == "flexible":
+            selected_pair = flexible_candidate(
+                language="es",
+                status="Impresión flexible en español",
+                spanish=True,
             )
-            if not selected_pair and quality_mode == "prefer_highres":
-                selected_pair = candidates[0] if candidates else None
+            if not selected_pair and allow_english_fallback:
+                selected_pair = flexible_candidate(
+                    language="en",
+                    status="Impresión flexible en inglés",
+                    spanish=False,
+                )
 
         if (
             not selected_pair
             and allow_english_if_missing
             and not allow_english_fallback
-            and not candidates
+            and not found_spanish
         ):
-            english_candidates: list[tuple[str, dict[str, Any]]] = []
-
-            def add_english_candidate(
-                status: str,
-                candidate: dict[str, Any] | None,
-            ) -> None:
-                if candidate and self._has_usable_image(candidate):
-                    english_candidates.append((status, candidate))
-
-            if (
-                resolution_mode in {"exact_first", "exact_only"}
-                and has_exact_printing
-            ):
-                add_english_candidate(
-                    "Misma impresión en inglés (sin imagen en español)",
-                    self._get_card_by_printing(
-                        card.set_code or "",
-                        card.collector_number or "",
-                        language=None,
-                    ),
+            if resolution_mode in {"exact_first", "exact_only"}:
+                selected_pair = exact_candidate(
+                    language=None,
+                    status="Misma impresión en inglés (sin imagen en español)",
+                    spanish=False,
+                )
+            if not selected_pair and resolution_mode == "exact_first":
+                selected_pair = flexible_candidate(
+                    language="en",
+                    status="Otra impresión en inglés (sin imagen en español)",
+                    spanish=False,
+                )
+            if not selected_pair and resolution_mode == "flexible":
+                selected_pair = flexible_candidate(
+                    language="en",
+                    status="Impresión flexible en inglés (sin imagen en español)",
+                    spanish=False,
                 )
 
-            if resolution_mode == "exact_first":
-                add_english_candidate(
-                    "Otra impresión en inglés (sin imagen en español)",
-                    self._find_printing(
-                        card.name,
-                        language="en",
-                        prefer_highres=prefer_highres_search,
-                    ),
-                )
-            elif resolution_mode == "flexible":
-                add_english_candidate(
-                    "Impresión flexible en inglés (sin imagen en español)",
-                    self._find_printing(
-                        card.name,
-                        language="en",
-                        prefer_highres=prefer_highres_search,
-                    ),
-                )
-
-            if quality_mode == "allow_lowres":
-                selected_pair = (
-                    english_candidates[0] if english_candidates else None
-                )
-            else:
-                selected_pair = next(
-                    (
-                        pair
-                        for pair in english_candidates
-                        if self._is_highres(pair[1])
-                    ),
-                    None,
-                )
-                if not selected_pair and quality_mode == "prefer_highres":
-                    selected_pair = (
-                        english_candidates[0] if english_candidates else None
-                    )
-            if english_candidates:
-                candidates.extend(english_candidates)
+        if not selected_pair and quality_mode == "prefer_highres":
+            selected_pair = first_usable
 
         if not selected_pair:
             quality_error = (
                 "No se encontró una impresión con imagen de alta resolución."
-                if quality_mode == "highres_only" and candidates
+                if quality_mode == "highres_only" and first_usable
                 else "No se encontró una imagen válida en Scryfall."
             )
             return ResolvedCard(
                 source=card,
                 status=(
                     "Sin alta resolución"
-                    if quality_mode == "highres_only" and candidates
+                    if quality_mode == "highres_only" and first_usable
                     else "No encontrada"
                 ),
                 error=quality_error,
@@ -548,6 +530,10 @@ class ScryfallClient:
         if response is None:
             raise ScryfallError("No se recibió respuesta de Scryfall.")
         if response.status_code == 404 and allow_not_found:
+            try:
+                cache_path.write_text("{}", encoding="utf-8")
+            except OSError:
+                pass
             return None
         try:
             response.raise_for_status()
