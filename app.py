@@ -437,8 +437,10 @@ def render_review_panel() -> None:
 
     selected = resolved_cards[selected_index]
 
-    preview_col, details_col = st.columns([1, 2])
-    with preview_col:
+    top_left, top_right = st.columns([1, 2])
+
+    with top_left:
+        st.markdown("#### Versión seleccionada")
         current_urls = preview_urls(selected.scryfall_data)
         if not current_urls:
             current_urls = [face.url for face in selected.faces]
@@ -449,206 +451,157 @@ def render_review_panel() -> None:
                     if len(current_urls) == 1
                     else f"Versión seleccionada · cara {face_number}"
                 )
-                st.image(url, caption=caption, width=210)
+                spacer_left, image_col, spacer_right = st.columns([1, 2, 1])
+                with image_col:
+                    st.image(url, caption=caption, width=210)
         else:
             st.warning("La selección actual no tiene imagen.")
 
-    with details_col:
-        st.markdown(f"### {selected.source.name}")
-        st.write(
-            f"**Cantidad:** {selected.source.quantity}  \n"
-            f"**Solicitada:** "
-            f"{(selected.source.set_code or '?').upper()} "
-            f"{selected.source.collector_number or '?'}  \n"
-            f"**Elegida:** {(selected.selected_set or '?').upper()} "
-            f"{selected.collector_number or '?'}  \n"
-            f"**Idioma:** {(selected.language or '?').upper()}  \n"
-            f"**Calidad:** {selected.image_status or 'desconocida'}  \n"
-            f"**Estado:** {selected.status}"
-        )
-        reasons = problem_reasons(selected)
-        if reasons:
-            st.warning("Motivos de revisión: " + ", ".join(reasons))
-        else:
-            st.success("La selección automática no presenta incidencias.")
-
-    st.markdown("#### Otras versiones")
-    st.caption(
-        "Las alternativas se cargan automáticamente para la carta actual. "
-        "Puedes filtrarlas por idioma, alta resolución y cantidad máxima."
-    )
-    alt_col1, alt_col2, alt_col3 = st.columns([2, 2, 1])
-    with alt_col1:
-        include_english_alternatives = st.checkbox(
-            "Incluir versiones en inglés",
-            value=True,
-            key=f"alt_english_{selected_index}",
-        )
-    with alt_col2:
-        only_highres_alternatives = st.checkbox(
-            "Mostrar solo alta resolución",
-            value=True,
-            key=f"alt_highres_{selected_index}",
-        )
-    with alt_col3:
-        alternatives_limit = st.selectbox(
-            "Máximo",
-            [6, 9, 12, 18],
-            index=2,
-            key=f"alt_limit_{selected_index}",
-        )
-
-    languages = (
-        ("es", "en")
-        if include_english_alternatives
-        else ("es",)
-    )
-    alternatives_state_key = (
-        f"{selected_index}|{','.join(languages)}|"
-        f"{only_highres_alternatives}|{alternatives_limit}"
-    )
-
-    alternatives_cache = st.session_state.setdefault("alternatives", {})
-    if alternatives_state_key not in alternatives_cache:
-        try:
-            with st.spinner("Cargando impresiones alternativas..."):
-                with ScryfallClient(
-                    cache_dir(),
-                    image_quality=st.session_state["analysis_image_quality"],
-                ) as client:
-                    alternatives_cache[alternatives_state_key] = (
-                        client.search_alternatives(
-                            selected.source.name,
-                            languages=languages,
-                            highres_only=only_highres_alternatives,
-                            max_results=alternatives_limit,
-                        )
-                    )
-        except (ScryfallError, OSError) as exc:
-            st.error(str(exc))
-            alternatives_cache[alternatives_state_key] = []
-
-    alternatives = alternatives_cache.get(
-        alternatives_state_key,
-        [],
-    )
-
-    if alternatives:
+    with top_right:
+        st.markdown("#### Otras versiones")
         st.caption(
-            "Puedes elegir una versión desde la lista compacta o desde la "
-            "galería. Al guardarla, se avanzará automáticamente a la siguiente carta."
+            "Las alternativas se cargan automáticamente para la carta actual. "
+            "Puedes filtrarlas por idioma, alta resolución y cantidad máxima."
+        )
+        alt_col1, alt_col2, alt_col3 = st.columns([2, 2, 1])
+        with alt_col1:
+            include_english_alternatives = st.checkbox(
+                "Incluir versiones en inglés",
+                value=True,
+                key=f"alt_english_{selected_index}",
+            )
+        with alt_col2:
+            only_highres_alternatives = st.checkbox(
+                "Mostrar solo alta resolución",
+                value=True,
+                key=f"alt_highres_{selected_index}",
+            )
+        with alt_col3:
+            alternatives_limit = st.selectbox(
+                "Máximo",
+                [6, 9, 12, 18],
+                index=2,
+                key=f"alt_limit_{selected_index}",
+            )
+
+        languages = (
+            ("es", "en")
+            if include_english_alternatives
+            else ("es",)
+        )
+        alternatives_state_key = (
+            f"{selected_index}|{','.join(languages)}|"
+            f"{only_highres_alternatives}|{alternatives_limit}"
         )
 
-        selected_alt_position = st.selectbox(
-            "Selector rápido de alternativas",
-            options=list(range(len(alternatives))),
-            format_func=lambda pos: candidate_label(alternatives[pos]),
-            key=f"quick_alternative_selector_{selected_index}",
-        )
-        quick_preview_urls = preview_urls(alternatives[selected_alt_position])
-        quick_left, quick_right = st.columns([1, 2])
-        with quick_left:
-            if quick_preview_urls:
-                st.image(quick_preview_urls[0], width=170)
-        with quick_right:
-            st.caption("Alternativa seleccionada en el selector rápido")
-            st.write(candidate_label(alternatives[selected_alt_position]))
-            if st.button(
-                "Usar alternativa seleccionada y continuar",
-                key=f"quick_choose_{selected_index}_{selected_alt_position}",
-                use_container_width=True,
-            ):
-                try:
-                    candidate = alternatives[selected_alt_position]
-                    target_index = next_review_index(
-                        review_indices,
-                        selected_index,
-                    )
+        alternatives_cache = st.session_state.setdefault("alternatives", {})
+        if alternatives_state_key not in alternatives_cache:
+            try:
+                with st.spinner("Cargando impresiones alternativas..."):
                     with ScryfallClient(
                         cache_dir(),
-                        image_quality=st.session_state[
-                            "analysis_image_quality"
-                        ],
+                        image_quality=st.session_state["analysis_image_quality"],
                     ) as client:
-                        replacement = client.resolve_from_candidate(
-                            selected.source,
-                            candidate,
-                            status="Selección manual",
-                        )
-
-                    updated = list(st.session_state["resolved_cards"])
-                    updated[selected_index] = replacement
-                    st.session_state["resolved_cards"] = updated
-                    set_review_index(target_index)
-                    st.session_state["review_flash_message"] = (
-                        f"Versión guardada para {selected.source.name}."
-                    )
-                    clear_generated_zip()
-                    st.rerun(scope="fragment")
-                except (ScryfallError, OSError) as exc:
-                    st.error(str(exc))
-
-        st.divider()
-        columns = st.columns(4)
-        for alternative_index, candidate in enumerate(alternatives):
-            column = columns[alternative_index % 4]
-            with column:
-                urls = preview_urls(candidate)
-                if urls:
-                    st.image(urls[0], width=145)
-                st.caption(candidate_label(candidate))
-                if len(urls) > 1:
-                    st.caption(f"Carta de {len(urls)} caras.")
-
-                if st.button(
-                    "Elegir y continuar",
-                    key=(
-                        f"choose_{selected_index}_"
-                        f"{candidate_key(candidate)}"
-                    ),
-                    use_container_width=True,
-                ):
-                    try:
-                        target_index = next_review_index(
-                            review_indices,
-                            selected_index,
-                        )
-                        with ScryfallClient(
-                            cache_dir(),
-                            image_quality=st.session_state[
-                                "analysis_image_quality"
-                            ],
-                        ) as client:
-                            replacement = client.resolve_from_candidate(
-                                selected.source,
-                                candidate,
-                                status="Selección manual",
+                        alternatives_cache[alternatives_state_key] = (
+                            client.search_alternatives(
+                                selected.source.name,
+                                languages=languages,
+                                highres_only=only_highres_alternatives,
+                                max_results=alternatives_limit,
                             )
-
-                        updated = list(
-                            st.session_state["resolved_cards"]
                         )
-                        updated[selected_index] = replacement
-                        st.session_state["resolved_cards"] = updated
-                        set_review_index(target_index)
-                        st.session_state["review_flash_message"] = (
-                            f"Versión guardada para "
-                            f"{selected.source.name}."
-                        )
-                        clear_generated_zip()
-                        st.rerun(scope="fragment")
-                    except (ScryfallError, OSError) as exc:
-                        st.error(str(exc))
+            except (ScryfallError, OSError) as exc:
+                st.error(str(exc))
+                alternatives_cache[alternatives_state_key] = []
 
-    elif alternatives_state_key in st.session_state.get(
-        "alternatives",
-        {},
-    ):
-        st.warning(
-            "No se han encontrado alternativas con esos filtros. "
-            "Prueba a incluir inglés o permitir imágenes que no estén "
-            "marcadas como alta resolución."
+        alternatives = alternatives_cache.get(
+            alternatives_state_key,
+            [],
         )
+
+        if alternatives:
+            st.caption(
+                "Elige una miniatura para guardar una versión y avanzar "
+                "automáticamente a la siguiente carta."
+            )
+            columns = st.columns(3)
+            for alternative_index, candidate in enumerate(alternatives):
+                column = columns[alternative_index % 3]
+                with column:
+                    with st.container(border=True):
+                        urls = preview_urls(candidate)
+                        if urls:
+                            img_left, img_center, img_right = st.columns([1, 2, 1])
+                            with img_center:
+                                st.image(urls[0], width=135)
+                        st.caption(candidate_label(candidate))
+                        if len(urls) > 1:
+                            st.caption(f"Carta de {len(urls)} caras.")
+
+                        if st.button(
+                            "Elegir y continuar",
+                            key=(
+                                f"choose_{selected_index}_"
+                                f"{candidate_key(candidate)}"
+                            ),
+                            use_container_width=True,
+                        ):
+                            try:
+                                target_index = next_review_index(
+                                    review_indices,
+                                    selected_index,
+                                )
+                                with ScryfallClient(
+                                    cache_dir(),
+                                    image_quality=st.session_state[
+                                        "analysis_image_quality"
+                                    ],
+                                ) as client:
+                                    replacement = client.resolve_from_candidate(
+                                        selected.source,
+                                        candidate,
+                                        status="Selección manual",
+                                    )
+
+                                updated = list(
+                                    st.session_state["resolved_cards"]
+                                )
+                                updated[selected_index] = replacement
+                                st.session_state["resolved_cards"] = updated
+                                set_review_index(target_index)
+                                st.session_state["review_flash_message"] = (
+                                    f"Versión guardada para "
+                                    f"{selected.source.name}."
+                                )
+                                clear_generated_zip()
+                                st.rerun(scope="fragment")
+                            except (ScryfallError, OSError) as exc:
+                                st.error(str(exc))
+        else:
+            st.warning(
+                "No se han encontrado alternativas con esos filtros. "
+                "Prueba a incluir inglés o permitir imágenes que no estén "
+                "marcadas como alta resolución."
+            )
+
+    st.markdown("#### Detalles de la versión seleccionada")
+    st.write(
+        f"**Carta:** {selected.source.name}  \n"
+        f"**Cantidad:** {selected.source.quantity}  \n"
+        f"**Solicitada:** "
+        f"{(selected.source.set_code or '?').upper()} "
+        f"{selected.source.collector_number or '?'}  \n"
+        f"**Elegida:** {(selected.selected_set or '?').upper()} "
+        f"{selected.collector_number or '?'}  \n"
+        f"**Idioma:** {(selected.language or '?').upper()}  \n"
+        f"**Calidad:** {selected.image_status or 'desconocida'}  \n"
+        f"**Estado:** {selected.status}"
+    )
+    reasons = problem_reasons(selected)
+    if reasons:
+        st.warning("Motivos de revisión: " + ", ".join(reasons))
+    else:
+        st.success("La selección automática no presenta incidencias.")
 
 
 if signature_matches:

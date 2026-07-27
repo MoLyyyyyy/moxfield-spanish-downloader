@@ -211,8 +211,9 @@ La revisión incluye:
 - selección manual mediante **Elegir y continuar**;
 - avance automático a la carta siguiente después de guardar una versión.
 
-### Selector rápido de alternativas
 
-En la revisión de cada carta, las alternativas se cargan automáticamente.
-Además de la galería de miniaturas, hay un selector rápido con vista previa
-para aplicar una versión de forma más cómoda sin tener que recorrer toda la cuadrícula.
+### Disposición de la revisión
+
+Las alternativas aparecen directamente a la derecha de la versión seleccionada,
+de modo que la comparación visual sea más intuitiva. Los detalles de la carta
+seleccionada se muestran debajo para dejar más espacio útil a las miniaturas.
