@@ -286,8 +286,9 @@ if signature_matches:
 
     st.subheader("2. Revisar impresiones")
     st.caption(
-        "La selección automática ya está aplicada. Puedes revisar únicamente "
-        "las cartas problemáticas o abrir cualquier carta para cambiar su versión."
+        "La selección automática ya está aplicada. Se consideran problemáticas "
+        "las cartas sin imagen, low-res o que cambiaron de edición. El idioma no "
+        "genera una revisión por sí solo."
     )
 
     summary1, summary2, summary3 = st.columns(3)
@@ -343,7 +344,7 @@ if signature_matches:
                         if len(current_urls) == 1
                         else f"Versión seleccionada · cara {face_number}"
                     )
-                    st.image(url, caption=caption, width=280)
+                    st.image(url, caption=caption, width=210)
             else:
                 st.warning("La selección actual no tiene imagen.")
 
@@ -430,13 +431,13 @@ if signature_matches:
                 "Selecciona una miniatura para sustituir la impresión actual. "
                 "La cantidad de copias no cambia."
             )
-            columns = st.columns(3)
+            columns = st.columns(4)
             for alternative_index, candidate in enumerate(alternatives):
-                column = columns[alternative_index % 3]
+                column = columns[alternative_index % 4]
                 with column:
                     urls = preview_urls(candidate)
                     if urls:
-                        st.image(urls[0], use_container_width=True)
+                        st.image(urls[0], width=145)
                     st.caption(candidate_label(candidate))
                     if len(urls) > 1:
                         st.caption(f"Carta de {len(urls)} caras.")

@@ -187,7 +187,8 @@ El proceso se divide en tres fases:
    para cada carta.
 2. **Revisar impresiones**: se muestra una tabla y un panel de previsualización.
    Puedes filtrar las cartas problemáticas, buscar hasta 18 alternativas y
-   elegir manualmente otra edición, idioma o ilustración.
+   elegir manualmente otra edición, idioma o ilustración. Una carta en inglés
+   no se considera problemática por sí sola.
 3. **Generar ZIP**: se descargan las selecciones definitivas respetando todas
    las cantidades.
 

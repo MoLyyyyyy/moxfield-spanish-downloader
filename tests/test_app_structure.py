@@ -16,3 +16,12 @@ def test_app_has_visual_review_flow() -> None:
     assert "Buscar impresiones alternativas" in app
     assert "Elegir esta versión" in app
     assert "Generar ZIP con la selección actual" in app
+
+
+
+def test_previews_are_compact() -> None:
+    app = Path("app.py").read_text(encoding="utf-8")
+    assert "width=210" in app
+    assert "st.columns(4)" in app
+    assert "width=145" in app
+    assert "width=280" not in app

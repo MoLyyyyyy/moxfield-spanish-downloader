@@ -10,8 +10,6 @@ def problem_reasons(card: ResolvedCard) -> list[str]:
 
     if not card.faces:
         reasons.append("sin imagen")
-    if card.language == "en":
-        reasons.append("en inglés")
     if card.image_status == "lowres" or card.highres_image is False:
         reasons.append("baja resolución")
 

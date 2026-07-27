@@ -33,7 +33,7 @@ def test_good_card_is_not_problematic() -> None:
     assert not is_problematic(resolved())
 
 
-def test_problem_reasons_detect_language_quality_and_printing_change() -> None:
+def test_problem_reasons_ignore_language_and_detect_real_issues() -> None:
     card = resolved(
         language="en",
         selected_set="cmm",
@@ -42,10 +42,14 @@ def test_problem_reasons_detect_language_quality_and_printing_change() -> None:
         highres_image=False,
     )
     assert problem_reasons(card) == [
-        "en inglés",
         "baja resolución",
         "cambió de edición",
     ]
+
+
+def test_english_card_alone_is_not_problematic() -> None:
+    card = resolved(language="en")
+    assert not is_problematic(card)
 
 
 def test_preview_urls_supports_double_faced_cards() -> None:
