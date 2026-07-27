@@ -275,3 +275,17 @@ Las imágenes MPCFill se descargan en bruto para el PDF, se elimina su sangrado
 original y después se crea el sangrado espejo de 1 mm. Las imágenes oficiales
 rellenan sus esquinas redondeadas antes de extender el borde, evitando manchas
 oscuras en el sangrado.
+
+
+### Progreso durante la generación
+
+La exportación PDF informa en directo de la fase actual:
+
+- frente y carta que se está descargando o procesando;
+- reverso y carta correspondiente;
+- página que se está montando;
+- fase final de compresión;
+- tiempo transcurrido.
+
+Esto permite distinguir un procesamiento normal de una descarga remota
+atascada.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -64,6 +65,136 @@ class PdfResult:
     page_pairs: int
 
 
+@dataclass(frozen=True, slots=True)
+class PdfProgress:
+    phase: str
+    current: int
+    total: int
+    phase_current: int
+    phase_total: int
+    label: str
+    page_label: str | None = None
+
+
+PdfProgressCallback = Callable[[PdfProgress], None]
+
+
+class _ProgressTracker:
+    def __init__(
+        self,
+        *,
+        total: int,
+        front_total: int,
+        back_total: int,
+        page_total: int,
+        callback: PdfProgressCallback | None,
+    ) -> None:
+        self.total = max(total, 1)
+        self.front_total = front_total
+        self.back_total = back_total
+        self.page_total = page_total
+        self.callback = callback
+        self.current = 0
+        self.front_current = 0
+        self.back_current = 0
+        self.page_current = 0
+
+    def announce(
+        self,
+        phase: str,
+        *,
+        phase_current: int,
+        phase_total: int,
+        label: str,
+        page_label: str | None = None,
+    ) -> None:
+        if self.callback is None:
+            return
+        self.callback(
+            PdfProgress(
+                phase=phase,
+                current=self.current,
+                total=self.total,
+                phase_current=phase_current,
+                phase_total=phase_total,
+                label=label,
+                page_label=page_label,
+            )
+        )
+
+    def before_card(
+        self,
+        card: PhysicalCard,
+        *,
+        backs: bool,
+        page_label: str,
+    ) -> None:
+        if backs:
+            self.announce(
+                "back",
+                phase_current=self.back_current + 1,
+                phase_total=self.back_total,
+                label=card.source.name,
+                page_label=page_label,
+            )
+        else:
+            self.announce(
+                "front",
+                phase_current=self.front_current + 1,
+                phase_total=self.front_total,
+                label=card.source.name,
+                page_label=page_label,
+            )
+
+    def complete_card(self, *, backs: bool) -> None:
+        self.current += 1
+        if backs:
+            self.back_current += 1
+        else:
+            self.front_current += 1
+
+    def before_page(self, page_label: str) -> None:
+        self.announce(
+            "page",
+            phase_current=self.page_current + 1,
+            phase_total=self.page_total,
+            label=page_label,
+            page_label=page_label,
+        )
+
+    def complete_page(self) -> None:
+        self.current += 1
+        self.page_current += 1
+
+    def before_common_back(self, label: str) -> None:
+        self.announce(
+            "common_back",
+            phase_current=1,
+            phase_total=1,
+            label=label,
+        )
+
+    def complete_common_back(self) -> None:
+        self.current += 1
+
+    def before_finalizing(self) -> None:
+        self.announce(
+            "finalizing",
+            phase_current=1,
+            phase_total=1,
+            label="PDF",
+        )
+
+    def finish(self) -> None:
+        self.current = self.total
+        self.announce(
+            "done",
+            phase_current=1,
+            phase_total=1,
+            label="PDF",
+        )
+
+
 def build_a4_pdf(
     resolved_cards,
     client: ScryfallClient,
@@ -76,6 +207,7 @@ def build_a4_pdf(
     cut_line_color: str = "#000000",
     cut_line_over_cards: bool = False,
     printer_marks: bool = True,
+    progress_callback: PdfProgressCallback | None = None,
 ) -> PdfResult:
     """Generate an A4 3x3 duplex PDF compatible with MPCFillToPDF layout.
 
@@ -94,6 +226,30 @@ def build_a4_pdf(
         or selected_back.mode != "none"
         or any(len(card.variant.faces) > 1 for card in cards)
     )
+    page_pairs_total = (
+        (len(cards) + PER_PAGE - 1) // PER_PAGE
+        if cards
+        else 0
+    )
+    page_total = page_pairs_total * (2 if needs_back_pages else 1)
+    common_back_steps = int(
+        selected_back.embedded_data is not None
+        or selected_back.face is not None
+    )
+    total_steps = (
+        len(cards)
+        + (len(cards) if needs_back_pages else 0)
+        + page_total
+        + common_back_steps
+        + 1
+    )
+    tracker = _ProgressTracker(
+        total=total_steps,
+        front_total=len(cards),
+        back_total=len(cards) if needs_back_pages else 0,
+        page_total=page_total,
+        callback=progress_callback,
+    )
 
     output = io.BytesIO()
     document = canvas.Canvas(output, pagesize=A4)
@@ -101,16 +257,24 @@ def build_a4_pdf(
     generic_back_cache: bytes | None = None
 
     if selected_back.embedded_data is not None:
+        tracker.before_common_back(
+            selected_back.label or "Reverso común"
+        )
         generic_back_cache = _prepare_print_image(
             selected_back.embedded_data,
             provider="embedded",
         )
+        tracker.complete_common_back()
     elif selected_back.face is not None:
+        tracker.before_common_back(
+            selected_back.label or "Reverso común"
+        )
         generic_back_cache = _prepare_face(
             selected_back.face,
             client,
             processed_cache,
         )
+        tracker.complete_common_back()
 
     front_pages = 0
     back_pages = 0
@@ -137,8 +301,11 @@ def build_a4_pdf(
             cut_line_color=cut_line_color,
             cut_line_over_cards=cut_line_over_cards,
             printer_marks=printer_marks,
+            tracker=tracker,
         )
+        tracker.before_page(str(page_pairs))
         document.showPage()
+        tracker.complete_page()
         front_pages += 1
 
         if needs_back_pages:
@@ -161,11 +328,17 @@ def build_a4_pdf(
                 cut_line_color=cut_line_color,
                 cut_line_over_cards=cut_line_over_cards,
                 printer_marks=printer_marks,
+                tracker=tracker,
             )
+            tracker.before_page(f"{page_pairs}B")
             document.showPage()
+            tracker.complete_page()
             back_pages += 1
 
+    tracker.before_finalizing()
     document.save()
+    tracker.current += 1
+    tracker.finish()
     return PdfResult(
         data=output.getvalue(),
         pages=front_pages + back_pages,
@@ -201,6 +374,7 @@ def _draw_page(
     cut_line_color: str,
     cut_line_over_cards: bool,
     printer_marks: bool,
+    tracker: _ProgressTracker,
 ) -> None:
     color = _hex_to_rgb(cut_line_color)
 
@@ -220,6 +394,13 @@ def _draw_page(
         column = position % COLUMNS
         x, y = _trim_origin(column, row)
 
+        if card is not None:
+            tracker.before_card(
+                card,
+                backs=backs,
+                page_label=page_label,
+            )
+
         image_data = _card_image(
             card,
             client,
@@ -235,6 +416,9 @@ def _draw_page(
                 width=IMAGE_WIDTH,
                 height=IMAGE_HEIGHT,
             )
+
+        if card is not None:
+            tracker.complete_card(backs=backs)
 
     if cut_lines and cut_line_over_cards:
         _draw_crop_marks(

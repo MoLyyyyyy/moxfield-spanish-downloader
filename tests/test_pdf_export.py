@@ -130,3 +130,27 @@ def test_exact_page_label_coordinates() -> None:
     ).parents[1] / "mtg_downloader" / "pdf_export.py"
     text = source.read_text(encoding="utf-8")
     assert 'document.drawString(295.4, 15.3, page_label)' in text
+
+
+
+def test_pdf_reports_detailed_progress() -> None:
+    events = []
+    card = ResolvedCard(
+        source=DeckCard(2, "Forest"),
+        status="ok",
+        faces=[ImageFace("Forest", "fake", ".png")],
+    )
+    result = build_a4_pdf(
+        [card],
+        FakeClient(),
+        progress_callback=events.append,
+    )
+
+    assert result.pages == 1
+    assert events
+    assert events[0].phase == "front"
+    assert events[0].label == "Forest"
+    assert any(event.phase == "page" for event in events)
+    assert any(event.phase == "finalizing" for event in events)
+    assert events[-1].phase == "done"
+    assert events[-1].current == events[-1].total

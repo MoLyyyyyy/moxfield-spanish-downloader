@@ -125,3 +125,15 @@ def test_exact_mpcfilltopdf_assets_are_mandatory() -> None:
     assert "Las marcas de registro y la barra CMYK son las imágenes " in app
     assert "originales de MPCFillToPDF" in app
     assert "printer_marks = True" in app
+
+
+
+def test_pdf_shows_live_progress() -> None:
+    app = app_text()
+    assert "update_pdf_progress" in app
+    assert "Preparando frente" in app
+    assert "Preparando reverso" in app
+    assert "Montando página" in app
+    assert "Finalizando y comprimiendo el PDF" in app
+    assert "progress_callback=update_pdf_progress" in app
+    assert "time.monotonic()" in app

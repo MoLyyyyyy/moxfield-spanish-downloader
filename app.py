@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +35,7 @@ from mtg_downloader.mpcfill import (
     mpc_candidate_key,
     mpc_candidate_label,
 )
-from mtg_downloader.pdf_export import build_a4_pdf
+from mtg_downloader.pdf_export import PdfProgress, build_a4_pdf
 from mtg_downloader.persistence import (
     SelectionConfigError,
     export_selection_config,
@@ -1346,7 +1347,49 @@ def render_export_panel() -> None:
                 image_quality=st.session_state["analysis_image_quality"],
             ) as client:
                 if export_format == "PDF A4 — 9 cartas por página":
-                    status.write("Generando PDF A4...")
+                    started_at = time.monotonic()
+
+                    def update_pdf_progress(event: PdfProgress) -> None:
+                        elapsed = int(time.monotonic() - started_at)
+                        progress.progress(
+                            min(event.current / max(event.total, 1), 1.0)
+                        )
+                        elapsed_text = f"{elapsed // 60}:{elapsed % 60:02d}"
+
+                        if event.phase == "front":
+                            status.write(
+                                f"Preparando frente "
+                                f"{event.phase_current}/{event.phase_total} "
+                                f"· página {event.page_label} "
+                                f"· **{event.label}** "
+                                f"· {elapsed_text}"
+                            )
+                        elif event.phase == "back":
+                            status.write(
+                                f"Preparando reverso "
+                                f"{event.phase_current}/{event.phase_total} "
+                                f"· página {event.page_label} "
+                                f"· **{event.label}** "
+                                f"· {elapsed_text}"
+                            )
+                        elif event.phase == "common_back":
+                            status.write(
+                                f"Preparando reverso común: "
+                                f"**{event.label}** · {elapsed_text}"
+                            )
+                        elif event.phase == "page":
+                            status.write(
+                                f"Montando página "
+                                f"{event.phase_current}/{event.phase_total}: "
+                                f"**{event.label}** · {elapsed_text}"
+                            )
+                        elif event.phase == "finalizing":
+                            status.write(
+                                f"Finalizando y comprimiendo el PDF "
+                                f"· {elapsed_text}"
+                            )
+
+                    status.write("Iniciando generación del PDF...")
                     result = build_a4_pdf(
                         cards,
                         client,
@@ -1358,6 +1401,7 @@ def render_export_panel() -> None:
                         cut_line_color=cut_line_color,
                         cut_line_over_cards=cut_line_over_cards,
                         printer_marks=printer_marks,
+                        progress_callback=update_pdf_progress,
                     )
                     data = result.data
                     name = "mazo_impresion_mpcfilltopdf.pdf"
