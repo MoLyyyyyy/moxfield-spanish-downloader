@@ -52,7 +52,9 @@ def test_mpcfill_crop_comparator_exists() -> None:
     assert "Desplazamiento horizontal del recorte" in app
     assert "Desplazamiento vertical del recorte" in app
     assert "Guardar ajuste de recorte" in app
-    assert "Original" in app and "Resultado" in app
+    assert "Original" in app and "Resultado automático" in app
+    assert "se recortan automáticamente" in app
+    assert "Modo de recorte" not in app
 
 
 def test_multiple_art_distribution_exists() -> None:
@@ -71,6 +73,7 @@ def test_persistence_and_bulk_editing_exist() -> None:
     assert "Edición masiva" in app
     assert "Aplicar acción masiva" in app
     assert "Primer diseño MPCFill de mayor DPI" in app
+    assert "Aplicar recorte a diseños MPCFill" not in app
 
 
 def test_gallery_filters_and_statuses_exist() -> None:
@@ -92,6 +95,7 @@ def test_validation_backs_and_export_profiles_exist() -> None:
     assert "Reverso neutro" in app
     assert "URL personalizada" in app
     assert "Diseño MPCFill" in app
+    assert "Recorte del reverso MPCFill" not in app
     assert "validate_deck(" in app
 
 
@@ -104,11 +108,20 @@ def test_output_can_be_generated_despite_errors_only_by_override() -> None:
 
 def test_pdf_matches_mpcfilltopdf_profile() -> None:
     app = app_text()
-    assert "Perfil compatible con MPCFillToPDF" in app
+    assert "Perfil exacto de MPCFillToPDF" in app
     assert "63,5 × 88,9 mm" in app
     assert "sangrado espejo de 1 mm" in app
     assert "Marcas cortas en los márgenes" in app
     assert "Líneas completas para corte manual" in app
     assert "barra CMYK" in app
-    assert "numeración 1/1B" in app
+    assert "páginas 1/1B" in app
     assert "cut_line_over_cards=cut_line_over_cards" in app
+
+
+
+def test_exact_mpcfilltopdf_assets_are_mandatory() -> None:
+    app = app_text()
+    assert "Perfil exacto de MPCFillToPDF" in app
+    assert "Las marcas de registro y la barra CMYK son las imágenes " in app
+    assert "originales de MPCFillToPDF" in app
+    assert "printer_marks = True" in app

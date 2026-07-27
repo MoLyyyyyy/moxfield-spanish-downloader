@@ -227,13 +227,11 @@ comunitarios de MPCFill. Para cada diseño se muestran su fuente, idioma y DPI.
 Las imágenes de MPCFill pueden incluir el sangrado de impresión. La aplicación
 ofrece tres modos:
 
-- **Automático**: detecta la proporción con sangrado y lo elimina.
-- **Mantener sangrado**: conserva la imagen original.
-- **Forzar recorte MPC**: elimina siempre el margen estándar de 3,048 mm.
-
-La miniatura mostrada y el archivo final del ZIP utilizan el mismo modo de
-recorte. Si MPCFill no está disponible, Scryfall continúa funcionando con
-normalidad.
+Las imágenes de **MPCFill** se recortan automáticamente al mostrarse y al exportarse.
+Las imágenes que no proceden de MPCFill no se recortan. Si hace falta, se puede
+ajustar manualmente el encuadre, pero no cambiar el hecho de que el recorte de
+MPCFill sea automático. Si MPCFill no está disponible, Scryfall continúa
+funcionando con normalidad.
 
 
 ## Vista visual del mazo

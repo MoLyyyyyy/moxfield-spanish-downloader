@@ -53,7 +53,7 @@ def validate_deck(
             if variant.image_status == "lowres" or variant.highres_image is False:
                 lowres.append(card.source.name)
             for face in variant.faces:
-                if face.provider == "mpcfill" and face.crop_mode == "none":
+                if face.provider == "mpcfill" and face.crop_mode not in {None, "auto"}:
                     bleed.append(card.source.name)
             match = re.search(r"(\d+)\s*dpi", variant.image_status or "", re.I)
             if match:
@@ -98,7 +98,7 @@ def validate_deck(
     if lowres:
         warnings.append(f"Hay {len(set(lowres))} entradas de baja resolución.")
     if bleed:
-        warnings.append(f"Hay {len(set(bleed))} entradas MPCFill con sangrado.")
+        warnings.append(f"Hay {len(set(bleed))} entradas MPCFill con un recorte no automático.")
     if duplicates:
         warnings.append(f"Hay {len(duplicates)} entradas duplicadas en la lista.")
 

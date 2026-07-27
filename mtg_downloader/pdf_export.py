@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass
+from pathlib import Path
 
 from PIL import Image, ImageOps
 from reportlab.lib.pagesizes import A4
@@ -10,7 +11,6 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from .backs import BackSpec, no_back
-from .image_processing import should_crop_mpc_image
 from .models import ImageFace
 from .physical import PhysicalCard, physical_cards
 from .scryfall import ScryfallClient
@@ -37,7 +37,12 @@ GAP_Y = (
 ) / (ROWS - 1)
 
 MARK_GAP = 3.0
+
+# Recursos exactos del generador Diphendara/MPCFillToPDF.
+ASSETS_DIR = Path(__file__).parent / "assets" / "mpcfilltopdf"
+CORNER_MARK_PATH = ASSETS_DIR / "corner_mark.png"
 CORNER_MARK_SIZE = 10.0
+COLOR_BAR_PATH = ASSETS_DIR / "color_bar.png"
 COLOR_BAR_WIDTH = 200.0
 COLOR_BAR_HEIGHT = 15.0
 COLOR_BAR_X = 197.64
@@ -91,7 +96,7 @@ def build_a4_pdf(
     )
 
     output = io.BytesIO()
-    document = canvas.Canvas(output, pagesize=A4, pageCompression=1)
+    document = canvas.Canvas(output, pagesize=A4)
     processed_cache: dict[str, bytes] = {}
     generic_back_cache: bytes | None = None
 
@@ -229,8 +234,6 @@ def _draw_page(
                 y - MIRROR_BLEED,
                 width=IMAGE_WIDTH,
                 height=IMAGE_HEIGHT,
-                preserveAspectRatio=False,
-                mask="auto",
             )
 
     if cut_lines and cut_line_over_cards:
@@ -318,14 +321,8 @@ def _prepare_print_image(
     except Exception as exc:
         raise ValueError("No se ha podido procesar una imagen para el PDF.") from exc
 
-    if provider == "mpcfill" and should_crop_mpc_image(*image.size):
-        image = image.crop(
-            _mpc_trim_box(
-                *image.size,
-                crop_shift_x=crop_shift_x,
-                crop_shift_y=crop_shift_y,
-            )
-        )
+    if provider == "mpcfill":
+        image = image.crop(_mpc_trim_box(*image.size))
     else:
         image = _fill_rounded_corners(image)
 
@@ -348,37 +345,10 @@ def _prepare_print_image(
 def _mpc_trim_box(
     width: int,
     height: int,
-    *,
-    crop_shift_x: int = 0,
-    crop_shift_y: int = 0,
 ) -> tuple[int, int, int, int]:
-    crop_x = max(1, round(width * MPC_BLEED_X_FRACTION))
-    crop_y = max(1, round(height * MPC_BLEED_Y_FRACTION))
-
-    shift_x = round(crop_x * max(-100, min(100, crop_shift_x)) / 100)
-    shift_y = round(crop_y * max(-100, min(100, crop_shift_y)) / 100)
-
-    left = crop_x + shift_x
-    top = crop_y + shift_y
-    right = width - crop_x + shift_x
-    bottom = height - crop_y + shift_y
-
-    if left < 0:
-        right -= left
-        left = 0
-    if right > width:
-        left -= right - width
-        right = width
-    if top < 0:
-        bottom -= top
-        top = 0
-    if bottom > height:
-        top -= bottom - height
-        bottom = height
-
-    if right <= left or bottom <= top:
-        raise ValueError("La imagen es demasiado pequeña para recortarla.")
-    return left, top, right, bottom
+    crop_x = round(width * MPC_BLEED_X_FRACTION)
+    crop_y = round(height * MPC_BLEED_Y_FRACTION)
+    return crop_x, crop_y, width - crop_x, height - crop_y
 
 
 def _add_mirror_bleed(image: Image.Image) -> Image.Image:
@@ -557,154 +527,47 @@ def _draw_printer_marks(
     document: canvas.Canvas,
     page_label: str,
 ) -> None:
-    for x, y in (
-        (0, 0),
-        (PAGE_WIDTH - CORNER_MARK_SIZE, 0),
-        (0, PAGE_HEIGHT - CORNER_MARK_SIZE),
-        (
-            PAGE_WIDTH - CORNER_MARK_SIZE,
-            PAGE_HEIGHT - CORNER_MARK_SIZE,
-        ),
-    ):
-        _draw_registration_target(
-            document,
-            x + (CORNER_MARK_SIZE / 2),
-            y + (CORNER_MARK_SIZE / 2),
-            CORNER_MARK_SIZE / 2,
+    """Inserta exactamente los recursos usados por MPCFillToPDF."""
+    if not CORNER_MARK_PATH.exists():
+        raise FileNotFoundError(
+            f"No se encuentra la marca de registro: {CORNER_MARK_PATH}"
+        )
+    if not COLOR_BAR_PATH.exists():
+        raise FileNotFoundError(
+            f"No se encuentra la barra CMYK: {COLOR_BAR_PATH}"
         )
 
-    _draw_color_bar(
-        document,
+    size = CORNER_MARK_SIZE
+    for x, y in (
+        (0, 0),
+        (PAGE_WIDTH - size, 0),
+        (0, PAGE_HEIGHT - size),
+        (PAGE_WIDTH - size, PAGE_HEIGHT - size),
+    ):
+        document.drawImage(
+            str(CORNER_MARK_PATH),
+            x,
+            y,
+            width=size,
+            height=size,
+            mask="auto",
+        )
+
+    document.drawImage(
+        str(COLOR_BAR_PATH),
         COLOR_BAR_X,
         PAGE_HEIGHT - COLOR_BAR_HEIGHT,
-        COLOR_BAR_WIDTH,
-        COLOR_BAR_HEIGHT,
+        width=COLOR_BAR_WIDTH,
+        height=COLOR_BAR_HEIGHT,
+        mask="auto",
     )
 
-    document.saveState()
-    document.setFont("Helvetica", 8)
-    document.setFillColorRGB(0, 0, 0)
-    document.drawString(295.4, 15.3, page_label)
-    document.restoreState()
-
-
-def _draw_registration_target(
-    document: canvas.Canvas,
-    center_x: float,
-    center_y: float,
-    radius: float,
-) -> None:
-    document.saveState()
-    document.setStrokeColorRGB(0, 0, 0)
-    document.setFillColorRGB(0, 0, 0)
-    document.setLineWidth(0.65)
-
-    document.circle(center_x, center_y, radius * 0.82, stroke=1, fill=0)
-    document.circle(center_x, center_y, radius * 0.48, stroke=1, fill=0)
-    document.circle(center_x, center_y, radius * 0.14, stroke=0, fill=1)
-    document.line(
-        center_x - radius,
-        center_y,
-        center_x + radius,
-        center_y,
-    )
-    document.line(
-        center_x,
-        center_y - radius,
-        center_x,
-        center_y + radius,
-    )
-    document.restoreState()
-
-
-def _draw_color_bar(
-    document: canvas.Canvas,
-    x: float,
-    y: float,
-    width: float,
-    height: float,
-) -> None:
-    document.saveState()
-    document.setFillColorRGB(1, 1, 1)
-    document.rect(x, y, width, height, stroke=0, fill=1)
-
-    _draw_registration_target(
-        document,
-        x + 7.2,
-        y + (height / 2),
-        6.4,
-    )
-
-    block_height = height * 0.58
-    block_y = y + ((height - block_height) / 2)
-    block_width = 6.0
-    group_positions = (51.0, 81.0, 111.0, 140.0)
-
-    shades = (1.0, 0.78, 0.55, 0.32)
-    for group, start in enumerate(group_positions):
-        for index, shade in enumerate(shades):
-            if group == 0:
-                color = (shade, 0, 0, 0)
-            elif group == 1:
-                color = (0, shade, 0, 0)
-            elif group == 2:
-                color = (0, 0, shade, 0)
-            else:
-                color = (0, 0, 0, shade)
-            document.setFillColorCMYK(*color)
-            document.rect(
-                x + start + (index * block_width),
-                block_y,
-                block_width,
-                block_height,
-                stroke=0,
-                fill=1,
-            )
-
-    register_x = x + 181.0
-    register_y = y + 1.5
-    register_size = 12.0
-    document.setStrokeColorRGB(0, 0, 0)
-    document.setLineWidth(1.0)
-    document.rect(
-        register_x,
-        register_y,
-        register_size,
-        register_size,
-        stroke=1,
-        fill=0,
-    )
-    half = register_size / 2
-    quadrants = (
-        (1, 0, 0, 0),
-        (0, 1, 0, 0),
-        (0, 0, 1, 0),
-        (0, 0, 0, 1),
-    )
-    positions = (
-        (register_x, register_y + half),
-        (register_x + half, register_y + half),
-        (register_x, register_y),
-        (register_x + half, register_y),
-    )
-    for color, (qx, qy) in zip(quadrants, positions):
-        document.setFillColorCMYK(*color)
-        document.rect(qx, qy, half, half, stroke=0, fill=1)
-
-    document.setStrokeColorRGB(0, 0, 0)
-    document.line(
-        register_x - 3,
-        register_y + half,
-        register_x + register_size + 3,
-        register_y + half,
-    )
-    document.line(
-        register_x + half,
-        register_y - 2,
-        register_x + half,
-        register_y + register_size + 2,
-    )
-    document.restoreState()
+    if page_label:
+        document.saveState()
+        document.setFont("Helvetica", 8)
+        document.setFillColorRGB(0, 0, 0)
+        document.drawString(295.4, 15.3, page_label)
+        document.restoreState()
 
 
 def _hex_to_rgb(value: str) -> tuple[float, float, float]:

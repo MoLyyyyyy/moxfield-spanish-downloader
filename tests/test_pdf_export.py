@@ -1,4 +1,5 @@
 import io
+from pathlib import Path
 
 from PIL import Image
 
@@ -95,3 +96,37 @@ def test_full_cut_line_style_is_supported() -> None:
     )
     assert result.data.startswith(b"%PDF")
     assert result.pages == 1
+
+
+
+def test_original_printer_assets_are_embedded() -> None:
+    import hashlib
+
+    from mtg_downloader.pdf_export import (
+        COLOR_BAR_PATH,
+        CORNER_MARK_PATH,
+    )
+
+    assert CORNER_MARK_PATH.exists()
+    assert COLOR_BAR_PATH.exists()
+    assert hashlib.sha256(CORNER_MARK_PATH.read_bytes()).hexdigest() == (
+        "5bb528c488fc4190de3a70933c7620131f182c92c0f6102acf21011e445a044d"
+    )
+    assert hashlib.sha256(COLOR_BAR_PATH.read_bytes()).hexdigest() == (
+        "b4085ae738978b0a3084590397552808d231249ba2e5d72a387d72029c457693"
+    )
+
+
+
+def test_mpc_pdf_crop_is_always_exact() -> None:
+    # Exact MPCFillToPDF behavior: 4.2% horizontal and 3.1% vertical.
+    assert _mpc_trim_box(1000, 1000) == (42, 31, 958, 969)
+
+
+
+def test_exact_page_label_coordinates() -> None:
+    source = Path(
+        __file__
+    ).parents[1] / "mtg_downloader" / "pdf_export.py"
+    text = source.read_text(encoding="utf-8")
+    assert 'document.drawString(295.4, 15.3, page_label)' in text

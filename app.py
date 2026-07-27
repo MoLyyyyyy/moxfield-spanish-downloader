@@ -277,7 +277,7 @@ def gallery_preview(
         try:
             return mpc_client.preview_bytes(
                 card.scryfall_data,
-                crop_mode=face.crop_mode if face and face.crop_mode else CROP_AUTO,
+                crop_mode=CROP_AUTO,
                 crop_shift_x=face.crop_shift_x if face else 0,
                 crop_shift_y=face.crop_shift_y if face else 0,
             )
@@ -304,6 +304,32 @@ def prefetch_selection(selection: ResolvedCard) -> None:
         pass
 
 
+def enforce_automatic_mpcfill_crop(card: ResolvedCard) -> ResolvedCard:
+    updated = copy.deepcopy(card)
+    variants = effective_variants(updated)
+    for variant in variants:
+        if variant.provider != "mpcfill":
+            continue
+        for face in variant.faces:
+            face.crop_mode = CROP_AUTO
+        if variant.metadata is not None:
+            variant.metadata["crop_mode"] = CROP_AUTO
+    if updated.allocations:
+        updated.allocations = variants
+    elif variants:
+        primary = variants[0]
+        updated.faces = copy.deepcopy(primary.faces)
+        updated.scryfall_data = copy.deepcopy(primary.metadata)
+    return updated
+
+
+def enforce_automatic_mpcfill_crop_list(
+    cards: list[ResolvedCard],
+) -> list[ResolvedCard]:
+    return [enforce_automatic_mpcfill_crop(card) for card in cards]
+
+
+
 def save_replacement(
     index: int,
     replacement: ResolvedCard,
@@ -315,9 +341,9 @@ def save_replacement(
     current = cards[index]
     if add_to_mix:
         updated = copy.deepcopy(current)
-        add_variant(updated, replacement)
+        add_variant(updated, enforce_automatic_mpcfill_crop(replacement))
     else:
-        updated = replace_all_copies(current, replacement)
+        updated = replace_all_copies(current, enforce_automatic_mpcfill_crop(replacement))
     cards[index] = updated
     st.session_state["resolved_cards"] = cards
     prefetch_selection(updated)
@@ -329,7 +355,6 @@ def save_replacement(
 def update_mpc_crop(
     index: int,
     *,
-    crop_mode: str,
     shift_x: int,
     shift_y: int,
 ) -> None:
@@ -340,11 +365,11 @@ def update_mpc_crop(
         if variant.provider != "mpcfill":
             continue
         for face in variant.faces:
-            face.crop_mode = crop_mode
+            face.crop_mode = CROP_AUTO
             face.crop_shift_x = shift_x
             face.crop_shift_y = shift_y
         if variant.metadata is not None:
-            variant.metadata["crop_mode"] = crop_mode
+            variant.metadata["crop_mode"] = CROP_AUTO
             variant.metadata["crop_shift_x"] = shift_x
             variant.metadata["crop_shift_y"] = shift_y
     if card.allocations:
@@ -359,7 +384,7 @@ def update_mpc_crop(
     clear_generated_output()
 
 
-def apply_bulk_action(indices: list[int], action: str, crop_mode: str) -> None:
+def apply_bulk_action(indices: list[int], action: str) -> None:
     if not indices:
         st.warning("Selecciona al menos una carta.")
         return
@@ -414,22 +439,6 @@ def apply_bulk_action(indices: list[int], action: str, crop_mode: str) -> None:
                         prefetch_selection(cards[index])
                     progress.progress(position / len(indices))
 
-        elif action == "Aplicar recorte a diseños MPCFill":
-            for position, index in enumerate(indices, start=1):
-                card = copy.deepcopy(cards[index])
-                variants = effective_variants(card)
-                for variant in variants:
-                    if variant.provider == "mpcfill":
-                        for face in variant.faces:
-                            face.crop_mode = crop_mode
-                if card.allocations:
-                    card.allocations = variants
-                elif variants:
-                    card.faces = variants[0].faces
-                cards[index] = card
-                prefetch_selection(card)
-                progress.progress(position / len(indices))
-
         elif action == "Unificar por nombre con la primera selección":
             template = cards[indices[0]]
             for position, index in enumerate(indices, start=1):
@@ -468,6 +477,7 @@ if st.button("Analizar mazo", type="primary", use_container_width=True):
                 progress.progress(index / len(cards))
 
         st.session_state["cards"] = cards
+        resolved_cards = enforce_automatic_mpcfill_crop_list(resolved_cards)
         st.session_state["resolved_cards"] = resolved_cards
         st.session_state["analysis_signature"] = current_signature()
         st.session_state["analysis_image_quality"] = image_quality
@@ -521,6 +531,7 @@ def render_persistence_panel() -> None:
         if st.button("Aplicar elecciones guardadas", use_container_width=True):
             try:
                 restored, warnings = import_selection_config(import_text, cards)
+                restored = enforce_automatic_mpcfill_crop_list(restored)
                 st.session_state["resolved_cards"] = restored
                 clear_generated_output()
                 if warnings:
@@ -551,22 +562,14 @@ def render_bulk_panel(filtered: list[int]) -> None:
                 "Máxima calidad disponible",
                 "Respetar impresión exacta",
                 "Primer diseño MPCFill de mayor DPI",
-                "Aplicar recorte a diseños MPCFill",
                 "Unificar por nombre con la primera selección",
             ],
         )
-        crop_label = st.selectbox(
-            "Recorte masivo de MPCFill",
-            ["Automático", "Mantener sangrado", "Forzar recorte"],
-            disabled=action != "Aplicar recorte a diseños MPCFill",
+        st.caption(
+            "Las imágenes de MPCFill se recortan automáticamente. Las demás no necesitan recorte."
         )
-        crop_mode = {
-            "Automático": CROP_AUTO,
-            "Mantener sangrado": CROP_NONE,
-            "Forzar recorte": CROP_FORCE,
-        }[crop_label]
         if st.button("Aplicar acción masiva", type="primary", use_container_width=True):
-            apply_bulk_action(selected_indices, action, crop_mode)
+            apply_bulk_action(selected_indices, action)
             st.rerun(scope="fragment")
 
 
@@ -701,7 +704,7 @@ def render_selected_preview(card: ResolvedCard) -> None:
             with MpcFillClient(mpc_cache_dir()) as client:
                 data = client.preview_bytes(
                     card.scryfall_data,
-                    crop_mode=face.crop_mode if face and face.crop_mode else CROP_AUTO,
+                    crop_mode=CROP_AUTO,
                     crop_shift_x=face.crop_shift_x if face else 0,
                     crop_shift_y=face.crop_shift_y if face else 0,
                 )
@@ -723,20 +726,10 @@ def render_crop_editor(index: int, card: ResolvedCard) -> None:
         return
     face = card.faces[0]
     with st.expander("✂️ Comparar y ajustar recorte MPCFill", expanded=False):
-        mode_label = st.selectbox(
-            "Modo de recorte",
-            ["Automático", "Mantener sangrado", "Forzar recorte"],
-            index={CROP_AUTO: 0, CROP_NONE: 1, CROP_FORCE: 2}.get(
-                face.crop_mode or CROP_AUTO,
-                0,
-            ),
-            key=f"selected_crop_mode_{index}",
+        st.caption(
+            "El recorte se aplica automáticamente a cualquier imagen de MPCFill. "
+            "Aquí solo puedes ajustar el encuadre si lo necesitas."
         )
-        mode = {
-            "Automático": CROP_AUTO,
-            "Mantener sangrado": CROP_NONE,
-            "Forzar recorte": CROP_FORCE,
-        }[mode_label]
         shift_x = st.slider(
             "Desplazamiento horizontal del recorte",
             -100,
@@ -756,7 +749,7 @@ def render_crop_editor(index: int, card: ResolvedCard) -> None:
                 original = client.preview_bytes(card.scryfall_data, crop_mode=CROP_NONE)
                 cropped = client.preview_bytes(
                     card.scryfall_data,
-                    crop_mode=mode,
+                    crop_mode=CROP_AUTO,
                     crop_shift_x=shift_x,
                     crop_shift_y=shift_y,
                 )
@@ -765,13 +758,13 @@ def render_crop_editor(index: int, card: ResolvedCard) -> None:
                 st.caption("Original")
                 st.image(original, width=190)
             with cropped_col:
-                st.caption("Resultado")
+                st.caption("Resultado automático")
                 st.image(cropped, width=190)
         except MpcFillError as exc:
             st.warning(str(exc))
         if st.button("Guardar ajuste de recorte", use_container_width=True):
-            update_mpc_crop(index, crop_mode=mode, shift_x=shift_x, shift_y=shift_y)
-            st.success("Recorte actualizado y guardado en caché.")
+            update_mpc_crop(index, shift_x=shift_x, shift_y=shift_y)
+            st.success("Ajuste guardado. Las imágenes MPCFill seguirán recortándose automáticamente.")
             st.rerun(scope="fragment")
 
 
@@ -795,7 +788,7 @@ def render_allocations(index: int, card: ResolvedCard) -> None:
                             face = variant.faces[0] if variant.faces else None
                             preview = client.preview_bytes(
                                 variant.metadata,
-                                crop_mode=(face.crop_mode if face and face.crop_mode else CROP_AUTO),
+                                crop_mode=CROP_AUTO,
                                 crop_shift_x=face.crop_shift_x if face else 0,
                                 crop_shift_y=face.crop_shift_y if face else 0,
                             )
@@ -1064,7 +1057,7 @@ def render_review_panel() -> None:
                         )
 
         else:
-            filters = st.columns([1.2, 1.2, 1.6, 1])
+            filters = st.columns([1.5, 1.5, 1])
             with filters[0]:
                 language_label = st.selectbox(
                     "Idioma",
@@ -1078,28 +1071,20 @@ def render_review_panel() -> None:
                     key=f"mpc_dpi_{selected_index}",
                 )
             with filters[2]:
-                crop_label = st.selectbox(
-                    "Recorte",
-                    ["Automático", "Mantener sangrado", "Forzar recorte"],
-                    key=f"mpc_crop_{selected_index}",
-                )
-            with filters[3]:
                 limit = st.selectbox(
                     "Máximo",
                     [6, 9, 12],
                     index=1,
                     key=f"mpc_limit_{selected_index}",
                 )
+            st.caption(
+                "Las miniaturas de MPCFill se recortan automáticamente. Si la imagen no es de MPCFill, no se recorta."
+            )
             languages = {
                 "Todos": (),
                 "Español": ("ES",),
                 "Inglés": ("EN",),
             }[language_label]
-            crop_mode = {
-                "Automático": CROP_AUTO,
-                "Mantener sangrado": CROP_NONE,
-                "Forzar recorte": CROP_FORCE,
-            }[crop_label]
             cache_key = f"{selected_index}|{languages}|{minimum_dpi}|{limit}"
             cache = st.session_state.setdefault("mpc_alternatives", {})
             try:
@@ -1122,7 +1107,7 @@ def render_review_panel() -> None:
                                 try:
                                     preview = client.preview_bytes(
                                         candidate,
-                                        crop_mode=crop_mode,
+                                        crop_mode=CROP_AUTO,
                                     )
                                     _, image_column, _ = st.columns([1, 2, 1])
                                     with image_column:
@@ -1133,14 +1118,14 @@ def render_review_panel() -> None:
                                 replacement = client.resolve_candidate(
                                     selected.source,
                                     candidate,
-                                    crop_mode=crop_mode,
+                                    crop_mode=CROP_AUTO,
                                     type_line=selected.type_line,
                                 )
                                 render_candidate_actions(
                                     selected_index,
                                     replacement,
                                     review_indices,
-                                    f"mpc_{selected_index}_{mpc_candidate_key(candidate)}_{crop_mode}",
+                                    f"mpc_{selected_index}_{mpc_candidate_key(candidate)}_auto",
                                 )
             except MpcFillError as exc:
                 st.warning(f"MPCFill no está disponible: {exc}")
@@ -1199,16 +1184,9 @@ def render_back_selector() -> BackSpec:
         value="lotus",
         key="mpc_back_query",
     )
-    crop_label = st.selectbox(
-        "Recorte del reverso MPCFill",
-        ["Automático", "Mantener sangrado", "Forzar recorte"],
-        key="mpc_back_crop",
+    st.caption(
+        "Los reversos de MPCFill se recortan automáticamente para mantener el mismo comportamiento que el resto de diseños MPCFill."
     )
-    crop_mode = {
-        "Automático": CROP_AUTO,
-        "Mantener sangrado": CROP_NONE,
-        "Forzar recorte": CROP_FORCE,
-    }[crop_label]
     if not query.strip():
         return no_back()
     try:
@@ -1223,9 +1201,9 @@ def render_back_selector() -> BackSpec:
                 format_func=lambda index: mpc_candidate_label(candidates[index]),
                 key="mpc_back_candidate",
             )
-            preview = client.preview_bytes(candidates[selected], crop_mode=crop_mode)
+            preview = client.preview_bytes(candidates[selected], crop_mode=CROP_AUTO)
             st.image(preview, width=150)
-            return mpcfill_back(candidates[selected], crop_mode=crop_mode)
+            return mpcfill_back(candidates[selected], crop_mode=CROP_AUTO)
     except MpcFillError as exc:
         st.warning(f"MPCFill no está disponible: {exc}")
         return no_back()
@@ -1265,7 +1243,7 @@ def render_export_panel() -> None:
 
     if export_format == "PDF A4 — 9 cartas por página":
         st.info(
-            "Perfil compatible con MPCFillToPDF: A4 3×3, cartas de "
+            "Perfil exacto de MPCFillToPDF: A4 3×3, cartas de "
             "63,5 × 88,9 mm, sangrado espejo de 1 mm, páginas 1/1B "
             "y marcas de imprenta."
         )
@@ -1296,10 +1274,11 @@ def render_export_panel() -> None:
                 "Color de las líneas",
                 value="#000000",
             )
-            printer_marks = st.checkbox(
-                "Añadir registros, barra CMYK y numeración 1/1B",
-                value=True,
+            st.caption(
+                "Las marcas de registro y la barra CMYK son las imágenes "
+                "originales de MPCFillToPDF y se incluyen siempre en este perfil."
             )
+            printer_marks = True
             cut_line_over_cards = st.checkbox(
                 "Dibujar las líneas por encima de las cartas",
                 value=False,
