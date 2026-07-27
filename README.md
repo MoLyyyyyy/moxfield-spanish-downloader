@@ -151,3 +151,22 @@ aplicación consulta los metadatos de Scryfall y permite elegir:
 El informe incluye las columnas `estado_imagen` y `alta_resolucion`. Ten en
 cuenta que priorizar calidad puede hacer que se seleccione otra edición o una
 versión inglesa antes que una impresión española de baja resolución.
+
+## Perfiles de descarga
+
+La interfaz principal utiliza perfiles para evitar que el usuario tenga que
+combinar manualmente edición, idioma y calidad:
+
+- **Equilibrado — recomendado**: intenta respetar la edición, prioriza alta
+  resolución y usa inglés como respaldo. Las imágenes low-res son el último
+  recurso.
+- **Fidelidad al listado**: solo descarga la edición y número indicados,
+  priorizando español y después inglés aunque la imagen sea low-res.
+- **Máxima calidad**: ignora la edición y solo acepta imágenes de alta
+  resolución, primero en español y después en inglés.
+- **Solo español**: nunca utiliza imágenes inglesas; puede cambiar de edición
+  para encontrar una impresión española de mejor calidad.
+
+Los controles técnicos siguen disponibles en **Opciones avanzadas**, donde se
+pueden personalizar la prioridad de impresión, el idioma, la calidad mínima y
+el formato del archivo.
