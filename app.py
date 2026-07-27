@@ -619,20 +619,42 @@ if app_step == 1 and analysis_submitted:
         status = st.empty()
         started_at = time.monotonic()
         resolved_cards: list[ResolvedCard] = []
+        temporary_failures = 0
+        current_card_name = {"value": ""}
+
+        def show_scryfall_retry(
+            status_code: int | None,
+            attempt: int,
+            max_retries: int,
+            delay: float,
+        ) -> None:
+            code_label = (
+                f"HTTP {status_code}"
+                if status_code is not None
+                else "error de conexión"
+            )
+            status.write(
+                f"Scryfall está temporalmente saturado ({code_label}). "
+                f"Reintento {attempt}/{max_retries} en "
+                f"{delay:.1f} s · "
+                f"**{current_card_name['value']}**"
+            )
 
         with ScryfallClient(
             cache_dir(),
             image_quality=image_quality,
+            retry_callback=show_scryfall_retry,
         ) as client:
             for index, card in enumerate(cards, start=1):
+                current_card_name["value"] = card.name
                 elapsed = int(time.monotonic() - started_at)
                 status.write(
                     f"Analizando {index}/{len(cards)} · "
                     f"**{card.name}** · "
                     f"{elapsed // 60}:{elapsed % 60:02d}"
                 )
-                resolved_cards.append(
-                    resolve_with_language_fallback(
+                try:
+                    resolved = resolve_with_language_fallback(
                         client,
                         card,
                         allow_english=allow_english,
@@ -640,7 +662,14 @@ if app_step == 1 and analysis_submitted:
                         resolution_mode=resolution_mode,
                         quality_mode=quality_mode,
                     )
-                )
+                except ScryfallError as exc:
+                    temporary_failures += 1
+                    resolved = ResolvedCard(
+                        source=card,
+                        status="Error temporal de Scryfall",
+                        error=str(exc),
+                    )
+                resolved_cards.append(resolved)
                 progress.progress(index / len(cards))
 
         resolved_cards = enforce_automatic_mpcfill_crop_list(
@@ -659,10 +688,18 @@ if app_step == 1 and analysis_submitted:
         st.session_state["workspace_selector_version"] = 0
         st.session_state.pop("review_only_problematic", None)
         st.session_state["app_step"] = 2
-        st.session_state["flash_message"] = (
-            f"Análisis completado: {len(cards)} entradas y "
-            f"{total_copies} copias."
-        )
+        if temporary_failures:
+            st.session_state["flash_message"] = (
+                f"Análisis completado: {len(cards)} entradas y "
+                f"{total_copies} copias. "
+                f"{temporary_failures} cartas quedaron pendientes por "
+                f"errores temporales de Scryfall."
+            )
+        else:
+            st.session_state["flash_message"] = (
+                f"Análisis completado: {len(cards)} entradas y "
+                f"{total_copies} copias."
+            )
         st.rerun()
     except (ValueError, ScryfallError, OSError) as exc:
         st.error(str(exc))

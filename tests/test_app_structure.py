@@ -181,3 +181,13 @@ def test_analysis_reuses_unchanged_results() -> None:
     assert "Se ha reutilizado el análisis anterior" in app
     assert "requested_signature = current_signature()" in app
     assert 'st.session_state.get("analysis_signature")' in app
+
+
+
+def test_analysis_handles_temporary_scryfall_errors() -> None:
+    app = app_text()
+    assert "show_scryfall_retry" in app
+    assert "Scryfall está temporalmente saturado" in app
+    assert "Error temporal de Scryfall" in app
+    assert "temporary_failures" in app
+    assert "retry_callback=show_scryfall_retry" in app

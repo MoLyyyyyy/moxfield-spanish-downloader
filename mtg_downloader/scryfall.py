@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -20,7 +22,17 @@ class ScryfallError(RuntimeError):
 
 
 class ScryfallClient:
-    def __init__(self, cache_dir: Path, image_quality: str = "large") -> None:
+    def __init__(
+        self,
+        cache_dir: Path,
+        image_quality: str = "large",
+        *,
+        retry_callback: Callable[
+            [int | None, int, int, float],
+            None,
+        ]
+        | None = None,
+    ) -> None:
         self.cache_dir = cache_dir
         self.json_cache = cache_dir / "json"
         self.image_cache = cache_dir / "images"
@@ -29,13 +41,14 @@ class ScryfallClient:
         self.image_cache.mkdir(parents=True, exist_ok=True)
         self.raw_image_cache.mkdir(parents=True, exist_ok=True)
         self.image_quality = image_quality
+        self.retry_callback = retry_callback
         self._last_api_request = 0.0
         self.client = httpx.Client(
             timeout=40.0,
             follow_redirects=True,
             headers={
                 "User-Agent": "MoxfieldCartasES/0.1 (aplicacion personal)",
-                "Accept": "application/json",
+                "Accept": "application/json;q=0.9,*/*;q=0.8",
             },
         )
 
@@ -516,31 +529,80 @@ class ScryfallClient:
             except (OSError, json.JSONDecodeError):
                 cache_path.unlink(missing_ok=True)
 
-        self._respect_rate_limit()
         url = f"{SCRYFALL_API}{path}"
+        retryable_statuses = {429, 500, 502, 503, 504}
+        max_attempts = 5
         response: httpx.Response | None = None
-        for attempt in range(3):
-            response = self.client.get(url, params=params)
-            self._last_api_request = time.monotonic()
-            if response.status_code != 429:
+        last_transport_error: httpx.TransportError | None = None
+
+        for attempt_index in range(max_attempts):
+            self._respect_rate_limit()
+            try:
+                response = self.client.get(url, params=params)
+                last_transport_error = None
+            except httpx.TransportError as exc:
+                response = None
+                last_transport_error = exc
+            finally:
+                self._last_api_request = time.monotonic()
+
+            status_code = response.status_code if response is not None else None
+            should_retry = (
+                last_transport_error is not None
+                or status_code in retryable_statuses
+            )
+            final_attempt = attempt_index == max_attempts - 1
+
+            if not should_retry or final_attempt:
                 break
-            retry_after = float(response.headers.get("Retry-After", "1"))
-            time.sleep(max(retry_after, 1.0) * (attempt + 1))
+
+            delay = self._retry_delay(
+                response,
+                attempt_index=attempt_index,
+            )
+            if self.retry_callback is not None:
+                self.retry_callback(
+                    status_code,
+                    attempt_index + 1,
+                    max_attempts - 1,
+                    delay,
+                )
+            time.sleep(delay)
 
         if response is None:
-            raise ScryfallError("No se recibió respuesta de Scryfall.")
+            message = (
+                "No se pudo conectar con Scryfall después de varios intentos."
+            )
+            if last_transport_error is not None:
+                raise ScryfallError(message) from last_transport_error
+            raise ScryfallError(message)
+
         if response.status_code == 404 and allow_not_found:
             try:
                 cache_path.write_text("{}", encoding="utf-8")
             except OSError:
                 pass
             return None
+
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise ScryfallError(
-                f"Scryfall devolvió el error HTTP {response.status_code}."
-            ) from exc
+            if response.status_code == 503:
+                message = (
+                    "Scryfall sigue temporalmente no disponible (HTTP 503) "
+                    "después de varios reintentos."
+                )
+            elif response.status_code == 429:
+                message = (
+                    "Scryfall ha limitado temporalmente las peticiones "
+                    "(HTTP 429)."
+                )
+            else:
+                message = (
+                    f"Scryfall devolvió el error HTTP "
+                    f"{response.status_code}."
+                )
+            raise ScryfallError(message) from exc
 
         try:
             payload = response.json()
@@ -549,13 +611,39 @@ class ScryfallClient:
         if not isinstance(payload, dict):
             raise ScryfallError("Scryfall devolvió un formato inesperado.")
 
-        cache_path.write_text(
-            json.dumps(payload, ensure_ascii=False), encoding="utf-8"
-        )
+        try:
+            cache_path.write_text(
+                json.dumps(payload, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
         return payload
+
+    @staticmethod
+    def _retry_delay(
+        response: httpx.Response | None,
+        *,
+        attempt_index: int,
+    ) -> float:
+        retry_after = 0.0
+        if response is not None:
+            raw_retry_after = response.headers.get("Retry-After")
+            if raw_retry_after:
+                try:
+                    retry_after = max(float(raw_retry_after), 0.0)
+                except ValueError:
+                    retry_after = 0.0
+
+        exponential = min(0.8 * (2**attempt_index), 8.0)
+        jitter = random.uniform(0.0, 0.35)
+        if response is not None and response.status_code == 429:
+            exponential = max(exponential, 1.5)
+        return min(max(retry_after, exponential + jitter), 12.0)
 
     def _respect_rate_limit(self) -> None:
         elapsed = time.monotonic() - self._last_api_request
-        remaining = 0.11 - elapsed
+        # Five-to-six API requests per second is gentler for shared cloud IPs.
+        remaining = 0.18 - elapsed
         if remaining > 0:
             time.sleep(remaining)

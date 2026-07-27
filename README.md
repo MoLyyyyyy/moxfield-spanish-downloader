@@ -334,3 +334,14 @@ resultado anterior.
 La resolución de cartas se detiene en cuanto encuentra una impresión válida con
 la prioridad solicitada. Las respuestas 404 también se guardan en caché para no
 repetir búsquedas inexistentes en análisis posteriores.
+
+
+### Errores temporales 503
+
+Las respuestas 429, 500, 502, 503 y 504 se reintentan con espera progresiva,
+variación aleatoria y respeto del encabezado `Retry-After`. La aplicación
+mantiene una frecuencia inferior a diez peticiones por segundo.
+
+Si Scryfall continúa sin responder después de los reintentos, la carta se marca
+como **Error temporal de Scryfall** y el análisis continúa con el resto del
+mazo, en lugar de perder todo el progreso.
