@@ -136,10 +136,10 @@ varias ilustraciones durante el paso de revisión.
                 value=str(saved_config.get("decklist", "")),
                 height=340,
                 placeholder=(
-                    "Commander:\\n"
-                    "1 Beorn the Fierce (HOB) 119 *F*\\n\\n"
-                    "Deck:\\n"
-                    "1 Arcane Signet (TMC) 57\\n"
+                    "Commander:\n"
+                    "1 Beorn the Fierce (HOB) 119 *F*\n\n"
+                    "Deck:\n"
+                    "1 Arcane Signet (TMC) 57\n"
                     "27 Forest (M20) 279"
                 ),
                 help="Se respetan cantidad, edición y número de coleccionista.",

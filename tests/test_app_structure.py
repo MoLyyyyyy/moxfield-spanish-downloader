@@ -217,3 +217,11 @@ def test_pdf_is_the_default_export_format() -> None:
         index=2,
     )"""
     assert expected in app
+
+
+
+def test_decklist_placeholder_uses_real_line_breaks() -> None:
+    app = app_text()
+    assert '"Commander:\\n"' in app
+    assert '"Commander:\\\\n"' not in app
+    assert '"Deck:\\n"' in app
