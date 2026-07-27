@@ -574,12 +574,57 @@ def render_bulk_panel(filtered: list[int]) -> None:
             st.rerun(scope="fragment")
 
 
+
+def render_gallery_grouped_section(
+    title: str,
+    description: str,
+    section_indices: list[int],
+    cards: list[ResolvedCard],
+    mpc_client: MpcFillClient | None,
+) -> None:
+    st.markdown(f"## {title}")
+    st.caption(description)
+
+    filtered_cards = [cards[index] for index in section_indices]
+    for category in group_deck(filtered_cards, indices=section_indices):
+        st.markdown(
+            f"### {category.label} <small>({category.quantity})</small>",
+            unsafe_allow_html=True,
+        )
+        entries = list(category.cards)
+        for start in range(0, len(entries), 6):
+            columns = st.columns(6)
+            for column, (index, card) in zip(columns, entries[start : start + 6]):
+                with column:
+                    with st.container(border=True):
+                        preview = gallery_preview(card, mpc_client)
+                        if preview is not None:
+                            _, image_column, _ = st.columns([1, 4, 1])
+                            with image_column:
+                                st.image(preview, width=105)
+                        else:
+                            st.caption("🖼️ Sin imagen")
+                        st.markdown(
+                            f"**{card.source.quantity}× {card.source.name}**"
+                        )
+                        st.caption(gallery_status_label(card))
+                        st.caption(gallery_printing_label(card))
+                        if st.button(
+                            "✏️ Editar",
+                            key=f"gallery_edit_{index}",
+                            use_container_width=True,
+                        ):
+                            open_card_editor(index)
+                            st.rerun(scope="fragment")
+        st.divider()
+
+
 def render_deck_gallery() -> None:
     cards: list[ResolvedCard] = st.session_state["resolved_cards"]
     st.subheader("2. Vista del mazo")
     st.caption(
-        "Versiones seleccionadas agrupadas por tipo. Usa los filtros, selecciona "
-        "varias entradas para cambios masivos o abre una carta concreta."
+        "Las cartas problemáticas aparecen primero, agrupadas aparte del resto. "
+        "Usa los filtros, selecciona varias entradas para cambios masivos o abre una carta concreta."
     )
 
     with ScryfallClient(
@@ -657,42 +702,33 @@ def render_deck_gallery() -> None:
         st.info("No hay cartas que coincidan con los filtros.")
         return
 
+    problematic_indices = [
+        index for index in indices if is_problematic(cards[index])
+    ]
+    healthy_indices = [
+        index for index in indices if not is_problematic(cards[index])
+    ]
+
     mpc_client: MpcFillClient | None = None
     if any(cards[index].provider == "mpcfill" for index in indices):
         mpc_client = MpcFillClient(mpc_cache_dir())
     try:
-        filtered_cards = [cards[index] for index in indices]
-        for category in group_deck(filtered_cards, indices=indices):
-            st.markdown(
-                f"### {category.label} <small>({category.quantity})</small>",
-                unsafe_allow_html=True,
+        if problematic_indices:
+            render_gallery_grouped_section(
+                "⚠️ Cartas con problemas",
+                "Estas cartas necesitan revisión o pueden requerir una edición manual.",
+                problematic_indices,
+                cards,
+                mpc_client,
             )
-            entries = list(category.cards)
-            for start in range(0, len(entries), 6):
-                columns = st.columns(6)
-                for column, (index, card) in zip(columns, entries[start : start + 6]):
-                    with column:
-                        with st.container(border=True):
-                            preview = gallery_preview(card, mpc_client)
-                            if preview is not None:
-                                _, image_column, _ = st.columns([1, 4, 1])
-                                with image_column:
-                                    st.image(preview, width=105)
-                            else:
-                                st.caption("🖼️ Sin imagen")
-                            st.markdown(
-                                f"**{card.source.quantity}× {card.source.name}**"
-                            )
-                            st.caption(gallery_status_label(card))
-                            st.caption(gallery_printing_label(card))
-                            if st.button(
-                                "✏️ Editar",
-                                key=f"gallery_edit_{index}",
-                                use_container_width=True,
-                            ):
-                                open_card_editor(index)
-                                st.rerun(scope="fragment")
-            st.divider()
+        if healthy_indices:
+            render_gallery_grouped_section(
+                "✅ Cartas correctas",
+                "Estas cartas ya están bien resueltas y solo se muestran después de las problemáticas.",
+                healthy_indices,
+                cards,
+                mpc_client,
+            )
     finally:
         if mpc_client:
             mpc_client.close()

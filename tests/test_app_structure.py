@@ -137,3 +137,15 @@ def test_pdf_shows_live_progress() -> None:
     assert "Finalizando y comprimiendo el PDF" in app
     assert "progress_callback=update_pdf_progress" in app
     assert "time.monotonic()" in app
+
+
+
+def test_problematic_cards_are_grouped_first_in_gallery() -> None:
+    app = app_text()
+    assert "def render_gallery_grouped_section(" in app
+    assert "⚠️ Cartas con problemas" in app
+    assert "✅ Cartas correctas" in app
+    assert "problematic_indices = [" in app
+    assert "healthy_indices = [" in app
+    assert "Estas cartas necesitan revisión" in app
+    assert "Estas cartas ya están bien resueltas" in app

@@ -289,3 +289,11 @@ La exportación PDF informa en directo de la fase actual:
 
 Esto permite distinguir un procesamiento normal de una descarga remota
 atascada.
+
+
+### Agrupación visual de cartas problemáticas
+
+En la vista del mazo, las cartas se muestran primero en un bloque de
+**Cartas con problemas** y después en otro bloque de **Cartas correctas**.
+Dentro de cada bloque se siguen agrupando por categoría para que sea más fácil
+revisar y editar primero lo que necesita atención.
