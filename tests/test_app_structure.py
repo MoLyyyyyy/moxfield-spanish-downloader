@@ -14,9 +14,8 @@ def test_app_has_visual_review_flow() -> None:
     assert "Analizar mazo" in app
     assert "Revisar impresiones" in app
     assert "Buscar impresiones alternativas" in app
-    assert "Elegir esta versión" in app
+    assert "Elegir y continuar" in app
     assert "Generar ZIP con la selección actual" in app
-
 
 
 def test_previews_are_compact() -> None:
@@ -25,3 +24,25 @@ def test_previews_are_compact() -> None:
     assert "st.columns(4)" in app
     assert "width=145" in app
     assert "width=280" not in app
+
+
+def test_app_advances_to_next_card_after_manual_choice() -> None:
+    app = Path("app.py").read_text(encoding="utf-8")
+    assert "def next_review_index(" in app
+    assert "def set_review_index(" in app
+    assert "set_review_index(target_index)" in app
+    assert "next_review_index(" in app
+    assert "Elegir y continuar" in app
+
+
+def test_review_uses_fragment_navigation() -> None:
+    app = Path("app.py").read_text(encoding="utf-8")
+    assert "@st.fragment" in app
+    assert 'st.rerun(scope="fragment")' in app
+    assert "Mantener actual y continuar" in app
+    assert "Elegir y continuar" in app
+    assert "← Anterior" in app
+    assert "Siguiente →" in app
+    assert "def previous_review_index(" in app
+    assert "def set_review_index(" in app
+    assert "st.rerun()" not in app

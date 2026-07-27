@@ -195,3 +195,18 @@ El proceso se divide en tres fases:
 Las alternativas se consultan bajo demanda para no cargar simultáneamente las
 imágenes de las 100 cartas. Las cartas de doble cara muestran sus distintas
 caras y conservan ambas al generar el ZIP.
+
+
+## Revisión fluida sin recargar toda la página
+
+La zona de revisión utiliza `st.fragment`. Al cambiar de carta, mantener una
+selección o elegir una impresión alternativa, Streamlit actualiza únicamente
+ese panel en lugar de ejecutar visualmente toda la página.
+
+La revisión incluye:
+
+- barra de progreso;
+- botones **Anterior** y **Siguiente**;
+- botón **Mantener actual y continuar**;
+- selección manual mediante **Elegir y continuar**;
+- avance automático a la carta siguiente después de guardar una versión.
