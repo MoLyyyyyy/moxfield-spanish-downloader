@@ -50,7 +50,13 @@ def should_crop_mpc_image(width: int, height: int) -> bool:
     return bleed_distance <= 0.018 and bleed_distance < target_distance
 
 
-def mpc_crop_box(width: int, height: int) -> tuple[int, int, int, int]:
+def mpc_crop_box(
+    width: int,
+    height: int,
+    *,
+    crop_shift_x: int = 0,
+    crop_shift_y: int = 0,
+) -> tuple[int, int, int, int]:
     horizontal_fraction = BLEED_EDGE_MM / (
         CARD_WIDTH_MM + (2 * BLEED_EDGE_MM)
     )
@@ -61,18 +67,39 @@ def mpc_crop_box(width: int, height: int) -> tuple[int, int, int, int]:
     crop_x = max(1, round(width * horizontal_fraction))
     crop_y = max(1, round(height * vertical_fraction))
 
-    right = width - crop_x
-    bottom = height - crop_y
-    if right <= crop_x or bottom <= crop_y:
+    shift_x = round(crop_x * max(-100, min(100, crop_shift_x)) / 100)
+    shift_y = round(crop_y * max(-100, min(100, crop_shift_y)) / 100)
+
+    left = crop_x + shift_x
+    top = crop_y + shift_y
+    right = width - crop_x + shift_x
+    bottom = height - crop_y + shift_y
+
+    if left < 0:
+        right -= left
+        left = 0
+    if right > width:
+        left -= right - width
+        right = width
+    if top < 0:
+        bottom -= top
+        top = 0
+    if bottom > height:
+        top -= bottom - height
+        bottom = height
+
+    if right <= left or bottom <= top:
         raise ImageProcessingError("La imagen es demasiado pequeña para recortarla.")
 
-    return crop_x, crop_y, right, bottom
+    return left, top, right, bottom
 
 
 def process_mpc_image_bytes(
     data: bytes,
     *,
     crop_mode: str = CROP_AUTO,
+    crop_shift_x: int = 0,
+    crop_shift_y: int = 0,
     max_preview_size: int | None = None,
 ) -> ProcessedImage:
     if crop_mode not in VALID_CROP_MODES:
@@ -98,7 +125,13 @@ def process_mpc_image_bytes(
     )
 
     if crop_needed:
-        image = image.crop(mpc_crop_box(*image.size))
+        image = image.crop(
+            mpc_crop_box(
+                *image.size,
+                crop_shift_x=crop_shift_x,
+                crop_shift_y=crop_shift_y,
+            )
+        )
 
     if max_preview_size is not None and max(image.size) > max_preview_size:
         image.thumbnail(

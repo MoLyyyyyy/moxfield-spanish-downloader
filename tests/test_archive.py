@@ -78,3 +78,53 @@ def test_report_contains_download_format() -> None:
     )
 
     assert report[0]["formato_descarga"] == "PNG"
+
+
+def test_zip_supports_multiple_art_allocations() -> None:
+    from mtg_downloader.selections import add_variant
+
+    resolved = ResolvedCard(
+        source=DeckCard(quantity=4, name="Forest"),
+        status="Manual",
+        printed_name="Forest A",
+        selected_set="a",
+        collector_number="1",
+        faces=[ImageFace("A", "a", ".jpg")],
+    )
+    other = ResolvedCard(
+        source=DeckCard(quantity=4, name="Forest"),
+        status="Manual",
+        printed_name="Forest B",
+        selected_set="b",
+        collector_number="2",
+        faces=[ImageFace("B", "b", ".jpg")],
+    )
+    add_variant(resolved, other)
+    data, report = build_zip([resolved], FakeClient(), duplicate_copies=True)
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        images = [name for name in archive.namelist() if name.endswith(".jpg")]
+    assert len(images) == 4
+    assert len(report) == 2
+    assert sum(row["cantidad"] for row in report) == 4
+
+
+def test_mpc_package_places_second_face_only_in_backs() -> None:
+    resolved = ResolvedCard(
+        source=DeckCard(quantity=1, name="DFC"),
+        status="ok",
+        faces=[
+            ImageFace("Front", "front", ".jpg"),
+            ImageFace("Back", "back", ".jpg"),
+        ],
+    )
+    data, _ = build_zip(
+        [resolved],
+        FakeClient(),
+        duplicate_copies=True,
+        package_mode="mpc",
+    )
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        fronts = [name for name in archive.namelist() if name.startswith("Frentes/")]
+        backs = [name for name in archive.namelist() if name.startswith("Reversos/")]
+    assert len(fronts) == 1
+    assert len(backs) == 1

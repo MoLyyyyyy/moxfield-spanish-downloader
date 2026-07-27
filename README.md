@@ -254,3 +254,26 @@ Cada entrada muestra:
 
 Las selecciones de MPCFill conservan el tipo original obtenido de Scryfall, de
 modo que cambiar el diseño no mueve la carta a otra categoría.
+
+
+## PDF compatible con MPCFillToPDF
+
+El perfil PDF reproduce la maquetación de imprenta utilizada por
+Diphendara/MPCFillToPDF:
+
+- A4 vertical con 3 × 3 cartas por página;
+- tamaño de corte de 63,5 × 88,9 mm;
+- sangrado en espejo de 1 mm alrededor de cada carta;
+- márgenes de corte de 5,75 mm en horizontal y 11,15 mm en vertical;
+- separación de 4 mm entre cartas;
+- páginas intercaladas como 1, 1B, 2, 2B;
+- reversos reflejados horizontalmente dentro de cada fila;
+- marcas de corte cortas en los márgenes o líneas completas;
+- registros en las cuatro esquinas;
+- barra CMYK superior;
+- numeración de pareja en la parte inferior.
+
+Las imágenes MPCFill se descargan en bruto para el PDF, se elimina su sangrado
+original y después se crea el sangrado espejo de 1 mm. Las imágenes oficiales
+rellenan sus esquinas redondeadas antes de extender el borde, evitando manchas
+oscuras en el sangrado.

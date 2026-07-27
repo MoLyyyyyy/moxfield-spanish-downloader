@@ -20,6 +20,26 @@ class ImageFace:
     extension: str
     provider: str = "scryfall"
     crop_mode: str | None = None
+    crop_shift_x: int = 0
+    crop_shift_y: int = 0
+
+
+@dataclass(slots=True)
+class CardVariant:
+    quantity: int
+    status: str
+    provider: str = "scryfall"
+    type_line: str | None = None
+    language: str | None = None
+    printed_name: str | None = None
+    selected_set: str | None = None
+    collector_number: str | None = None
+    faces: list[ImageFace] = field(default_factory=list)
+    metadata: dict[str, Any] | None = None
+    error: str | None = None
+    downloaded_format: str | None = None
+    image_status: str | None = None
+    highres_image: bool | None = None
 
 
 @dataclass(slots=True)
@@ -38,3 +58,4 @@ class ResolvedCard:
     downloaded_format: str | None = None
     image_status: str | None = None
     highres_image: bool | None = None
+    allocations: list[CardVariant] = field(default_factory=list)

@@ -24,8 +24,10 @@ class ScryfallClient:
         self.cache_dir = cache_dir
         self.json_cache = cache_dir / "json"
         self.image_cache = cache_dir / "images"
+        self.raw_image_cache = cache_dir / "raw_images"
         self.json_cache.mkdir(parents=True, exist_ok=True)
         self.image_cache.mkdir(parents=True, exist_ok=True)
+        self.raw_image_cache.mkdir(parents=True, exist_ok=True)
         self.image_quality = image_quality
         self._last_api_request = 0.0
         self.client = httpx.Client(
@@ -258,29 +260,54 @@ class ScryfallClient:
 
         return selected[:max_results]
 
-    def download_image(self, face: ImageFace) -> bytes:
+    def cache_path_for_face(self, face: ImageFace) -> Path:
         cache_identity = (
-            f"{face.url}|{face.provider}|{face.crop_mode or 'none'}|v2"
+            f"{face.url}|{face.provider}|{face.crop_mode or 'none'}|"
+            f"{face.crop_shift_x}|{face.crop_shift_y}|v3"
         )
         key = hashlib.sha256(cache_identity.encode("utf-8")).hexdigest()
-        path = self.image_cache / f"{key}{face.extension}"
+        return self.image_cache / f"{key}{face.extension}"
+
+    def is_face_cached(self, face: ImageFace) -> bool:
+        path = self.cache_path_for_face(face)
+        return path.exists() and path.stat().st_size > 0
+
+    def download_raw_image(self, face: ImageFace) -> bytes:
+        key = hashlib.sha256(face.url.encode("utf-8")).hexdigest()
+        path = self.raw_image_cache / f"{key}{face.extension}"
         if path.exists() and path.stat().st_size > 0:
             return path.read_bytes()
 
-        response = self.client.get(
-            face.url,
-            headers={
-                "User-Agent": "MoxfieldCartasES/0.2 (aplicacion personal)",
-                "Accept": "image/avif,image/webp,image/png,image/jpeg,*/*",
-            },
-        )
-        response.raise_for_status()
-        data = response.content
+        try:
+            response = self.client.get(
+                face.url,
+                headers={
+                    "User-Agent": "MoxfieldCartasES/0.4 (aplicacion personal)",
+                    "Accept": "image/avif,image/webp,image/png,image/jpeg,*/*",
+                },
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise ScryfallError(
+                f"No se ha podido descargar la imagen de {face.label}."
+            ) from exc
+
+        path.write_bytes(response.content)
+        return response.content
+
+    def download_image(self, face: ImageFace) -> bytes:
+        path = self.cache_path_for_face(face)
+        if path.exists() and path.stat().st_size > 0:
+            return path.read_bytes()
+
+        data = self.download_raw_image(face)
 
         if face.provider == "mpcfill":
             data = process_mpc_image_bytes(
                 data,
                 crop_mode=face.crop_mode or "auto",
+                crop_shift_x=face.crop_shift_x,
+                crop_shift_y=face.crop_shift_y,
             ).data
 
         path.write_bytes(data)

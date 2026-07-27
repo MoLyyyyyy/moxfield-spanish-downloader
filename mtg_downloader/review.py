@@ -6,21 +6,28 @@ from .models import ResolvedCard
 
 
 def problem_reasons(card: ResolvedCard) -> list[str]:
-    reasons: list[str] = []
+    from .selections import effective_variants
 
-    if not card.faces:
+    reasons: list[str] = []
+    variants = effective_variants(card)
+
+    if any(not variant.faces for variant in variants):
         reasons.append("sin imagen")
-    if card.image_status == "lowres" or card.highres_image is False:
+    if any(
+        variant.image_status == "lowres" or variant.highres_image is False
+        for variant in variants
+    ):
         reasons.append("baja resolución")
 
     source_set = (card.source.set_code or "").casefold()
-    selected_set = (card.selected_set or "").casefold()
     source_number = str(card.source.collector_number or "").casefold()
-    selected_number = str(card.collector_number or "").casefold()
+    primary = variants[0]
+    selected_set = (primary.selected_set or "").casefold()
+    selected_number = str(primary.collector_number or "").casefold()
 
     if (
-        card.provider != "mpcfill"
-        and card.status != "Selección manual"
+        primary.provider != "mpcfill"
+        and primary.status != "Selección manual"
         and source_set
         and source_number
         and selected_set

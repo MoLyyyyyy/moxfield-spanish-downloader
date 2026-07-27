@@ -65,6 +65,7 @@ class MpcFillClient:
         languages: tuple[str, ...] = (),
         minimum_dpi: int = 300,
         max_results: int = 9,
+        card_type: str = "CARD",
     ) -> list[dict[str, Any]]:
         if max_results < 1:
             return []
@@ -73,6 +74,7 @@ class MpcFillClient:
             name,
             languages=languages,
             minimum_dpi=minimum_dpi,
+            card_type=card_type,
         )
         if not identifiers:
             return []
@@ -106,11 +108,28 @@ class MpcFillClient:
         )
         return candidates[:max_results]
 
+    def search_cardbacks(
+        self,
+        name: str,
+        *,
+        minimum_dpi: int = 300,
+        max_results: int = 9,
+    ) -> list[dict[str, Any]]:
+        return self.search_designs(
+            name,
+            languages=(),
+            minimum_dpi=minimum_dpi,
+            max_results=max_results,
+            card_type="CARDBACK",
+        )
+
     def preview_bytes(
         self,
         candidate: dict[str, Any],
         *,
         crop_mode: str = CROP_AUTO,
+        crop_shift_x: int = 0,
+        crop_shift_y: int = 0,
     ) -> bytes:
         preview_url = (
             candidate.get("mediumThumbnailUrl")
@@ -121,7 +140,7 @@ class MpcFillClient:
             raise MpcFillError("Este diseño no ofrece una imagen de previsualización.")
 
         key = hashlib.sha256(
-            f"{preview_url}|{crop_mode}|preview-v1".encode("utf-8")
+            f"{preview_url}|{crop_mode}|{crop_shift_x}|{crop_shift_y}|preview-v2".encode("utf-8")
         ).hexdigest()
         path = self.preview_cache / f"{key}.jpg"
         if path.exists() and path.stat().st_size > 0:
@@ -131,6 +150,8 @@ class MpcFillClient:
         processed = process_mpc_image_bytes(
             raw,
             crop_mode=crop_mode,
+            crop_shift_x=crop_shift_x,
+            crop_shift_y=crop_shift_y,
             max_preview_size=600,
         )
         path.write_bytes(processed.data)
@@ -142,6 +163,8 @@ class MpcFillClient:
         candidate: dict[str, Any],
         *,
         crop_mode: str = CROP_AUTO,
+        crop_shift_x: int = 0,
+        crop_shift_y: int = 0,
         type_line: str | None = None,
     ) -> ResolvedCard:
         download_url = candidate.get("download_url")
@@ -160,6 +183,8 @@ class MpcFillClient:
         data = dict(candidate)
         data["provider"] = "mpcfill"
         data["crop_mode"] = crop_mode
+        data["crop_shift_x"] = crop_shift_x
+        data["crop_shift_y"] = crop_shift_y
 
         return ResolvedCard(
             source=card,
@@ -177,6 +202,8 @@ class MpcFillClient:
                     extension=extension,
                     provider="mpcfill",
                     crop_mode=crop_mode,
+                    crop_shift_x=crop_shift_x,
+                    crop_shift_y=crop_shift_y,
                 )
             ],
             scryfall_data=data,
@@ -191,13 +218,14 @@ class MpcFillClient:
         *,
         languages: tuple[str, ...],
         minimum_dpi: int,
+        card_type: str = "CARD",
     ) -> list[str]:
         query = _normalise_query(name)
         payload = {
             "searchSettings": {
                 "searchTypeSettings": {
                     "fuzzySearch": False,
-                    "filterCardbacks": False,
+                    "filterCardbacks": card_type == "CARDBACK",
                 },
                 "sourceSettings": {
                     "sources": self._source_rows(),
@@ -214,7 +242,7 @@ class MpcFillClient:
             "queries": [
                 {
                     "query": query,
-                    "cardType": "CARD",
+                    "cardType": card_type,
                 }
             ],
         }
@@ -229,7 +257,7 @@ class MpcFillClient:
 
         direct = results.get(query)
         if isinstance(direct, dict):
-            identifiers = direct.get("CARD")
+            identifiers = direct.get(card_type)
             if isinstance(identifiers, list):
                 return [str(value) for value in identifiers]
 
@@ -238,7 +266,7 @@ class MpcFillClient:
         for value in results.values():
             if not isinstance(value, dict):
                 continue
-            identifiers = value.get("CARD")
+            identifiers = value.get(card_type)
             if isinstance(identifiers, list):
                 found.extend(str(identifier) for identifier in identifiers)
         return list(dict.fromkeys(found))

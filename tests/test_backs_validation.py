@@ -1,0 +1,32 @@
+from mtg_downloader.backs import neutral_back, standard_magic_back
+from mtg_downloader.models import DeckCard, ImageFace, ResolvedCard
+from mtg_downloader.validation import validate_deck
+
+
+def test_neutral_back_contains_png() -> None:
+    back = neutral_back()
+    assert back.embedded_data.startswith(b"\x89PNG")
+
+
+def test_standard_back_has_scryfall_url() -> None:
+    back = standard_magic_back()
+    assert back.face is not None
+    assert "backs.scryfall.io" in back.face.url
+
+
+def test_validation_counts_cards_and_backs() -> None:
+    card = ResolvedCard(
+        source=DeckCard(3, "Forest"),
+        status="ok",
+        faces=[ImageFace("Forest", "https://x/a.png", ".png")],
+    )
+    result = validate_deck([card], back_spec=neutral_back())
+    assert result.expected_cards == 3
+    assert result.expected_back_files == 3
+    assert result.can_generate
+
+
+def test_missing_image_blocks_generation() -> None:
+    card = ResolvedCard(source=DeckCard(1, "Missing"), status="Sin imagen")
+    result = validate_deck([card])
+    assert not result.can_generate

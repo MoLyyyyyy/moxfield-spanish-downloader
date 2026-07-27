@@ -100,3 +100,45 @@ def test_search_and_resolve_mpcfill_design(tmp_path: Path) -> None:
     assert resolved.faces[0].provider == "mpcfill"
     assert resolved.faces[0].crop_mode == "auto"
     assert resolved.selected_set == "MPCFILL"
+
+
+def test_search_cardbacks_uses_cardback_type(tmp_path: Path) -> None:
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/2/sources/":
+            return httpx.Response(200, json={"results": {"1": {"pk": 1}}})
+        if request.url.path == "/2/editorSearch/":
+            payload = json.loads(request.content)
+            seen["payload"] = payload
+            return httpx.Response(
+                200,
+                json={"results": {"lotus": {"CARDBACK": ["back"]}}},
+            )
+        if request.url.path == "/2/cards/":
+            return httpx.Response(
+                200,
+                json={
+                    "results": {
+                        "back": {
+                            "identifier": "back",
+                            "name": "Lotus Back",
+                            "dpi": 1200,
+                            "extension": "png",
+                            "sourceType": "Google Drive",
+                            "downloadLink": "https://images.test/back.png",
+                        }
+                    }
+                },
+            )
+        raise AssertionError(request.url)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    mpc = MpcFillClient(tmp_path, client=client)
+    results = mpc.search_cardbacks("lotus")
+    assert results[0]["identifier"] == "back"
+    query = seen["payload"]["queries"][0]
+    assert query["cardType"] == "CARDBACK"
+    assert seen["payload"]["searchSettings"]["searchTypeSettings"][
+        "filterCardbacks"
+    ]

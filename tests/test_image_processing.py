@@ -54,3 +54,17 @@ def test_auto_crops_bleed_image() -> None:
         crop_mode=CROP_AUTO,
     )
     assert processed.cropped
+
+
+def test_crop_shift_preserves_final_dimensions() -> None:
+    centered = process_mpc_image_bytes(
+        image_bytes(),
+        crop_mode=CROP_FORCE,
+    )
+    shifted = process_mpc_image_bytes(
+        image_bytes(),
+        crop_mode=CROP_FORCE,
+        crop_shift_x=100,
+        crop_shift_y=-100,
+    )
+    assert shifted.final_size == centered.final_size
