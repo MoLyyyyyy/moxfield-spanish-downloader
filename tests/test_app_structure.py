@@ -154,7 +154,9 @@ def test_problematic_cards_are_grouped_first_in_gallery() -> None:
 
 def test_spanish_profile_uses_english_as_last_resort() -> None:
     app = app_text()
-    assert "allow_english_if_missing = selected_profile.allow_english_if_missing" in app
+    assert "allow_english_if_missing = getattr(" in app
+    assert "profile_key == \"spanish_only\"" in app
+    assert "resolve_with_language_fallback(" in app
     assert "allow_english_if_missing=allow_english_if_missing" in app
     readme = Path("README.md").read_text(encoding="utf-8")
     assert "usa inglés como último recurso" in readme

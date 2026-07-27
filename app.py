@@ -42,6 +42,7 @@ from mtg_downloader.persistence import (
     import_selection_config,
 )
 from mtg_downloader.profiles import PROFILES, get_profile
+from mtg_downloader.profile_resolution import resolve_with_language_fallback
 from mtg_downloader.review import (
     candidate_key,
     candidate_label,
@@ -123,12 +124,22 @@ with right:
         index=0,
     )
     selected_profile = get_profile(profile_key)
-    st.info(selected_profile.description)
+    profile_description = selected_profile.description
+    if profile_key == "spanish_only":
+        profile_description = (
+            "Prioriza siempre el español. Si no existe ninguna imagen "
+            "en español, usa inglés como último recurso."
+        )
+    st.info(profile_description)
 
     resolution_mode = selected_profile.resolution_mode
     quality_mode = selected_profile.quality_mode
     allow_english = selected_profile.allow_english
-    allow_english_if_missing = selected_profile.allow_english_if_missing
+    allow_english_if_missing = getattr(
+        selected_profile,
+        "allow_english_if_missing",
+        profile_key == "spanish_only",
+    )
     image_quality = "png"
 
     with st.expander("Opciones avanzadas", expanded=False):
@@ -198,6 +209,7 @@ def current_signature() -> str:
         "resolution_mode": resolution_mode,
         "quality_mode": quality_mode,
         "allow_english": allow_english,
+        "allow_english_if_missing": allow_english_if_missing,
         "image_quality": image_quality,
         "include_sideboard": include_sideboard,
         "include_maybeboard": include_maybeboard,
@@ -469,9 +481,10 @@ if st.button("Analizar mazo", type="primary", use_container_width=True):
             for index, card in enumerate(cards, start=1):
                 status.write(f"Buscando {index}/{len(cards)}: **{card.name}**")
                 resolved_cards.append(
-                    client.resolve(
+                    resolve_with_language_fallback(
+                        client,
                         card,
-                        allow_english_fallback=allow_english,
+                        allow_english=allow_english,
                         allow_english_if_missing=allow_english_if_missing,
                         resolution_mode=resolution_mode,
                         quality_mode=quality_mode,
