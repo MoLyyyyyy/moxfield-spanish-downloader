@@ -178,3 +178,19 @@ Ahora existen dos formas estables de introducir el mazo:
 
 Se conservan las cantidades, edición, número de coleccionista y marcas como
 `*F*`, que se ignoran para seleccionar la imagen.
+
+## Revisión visual y selección manual
+
+El proceso se divide en tres fases:
+
+1. **Analizar mazo**: la aplicación selecciona automáticamente una impresión
+   para cada carta.
+2. **Revisar impresiones**: se muestra una tabla y un panel de previsualización.
+   Puedes filtrar las cartas problemáticas, buscar hasta 18 alternativas y
+   elegir manualmente otra edición, idioma o ilustración.
+3. **Generar ZIP**: se descargan las selecciones definitivas respetando todas
+   las cantidades.
+
+Las alternativas se consultan bajo demanda para no cargar simultáneamente las
+imágenes de las 100 cartas. Las cartas de doble cara muestran sus distintas
+caras y conservan ambas al generar el ZIP.

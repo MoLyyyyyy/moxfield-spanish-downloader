@@ -1,0 +1,131 @@
+from __future__ import annotations
+
+from typing import Any
+
+from .models import ResolvedCard
+
+
+def problem_reasons(card: ResolvedCard) -> list[str]:
+    reasons: list[str] = []
+
+    if not card.faces:
+        reasons.append("sin imagen")
+    if card.language == "en":
+        reasons.append("en inglés")
+    if card.image_status == "lowres" or card.highres_image is False:
+        reasons.append("baja resolución")
+
+    source_set = (card.source.set_code or "").casefold()
+    selected_set = (card.selected_set or "").casefold()
+    source_number = str(card.source.collector_number or "").casefold()
+    selected_number = str(card.collector_number or "").casefold()
+
+    if (
+        source_set
+        and source_number
+        and selected_set
+        and selected_number
+        and (source_set != selected_set or source_number != selected_number)
+    ):
+        reasons.append("cambió de edición")
+
+    return reasons
+
+
+def is_problematic(card: ResolvedCard) -> bool:
+    return bool(problem_reasons(card))
+
+
+def candidate_key(candidate: dict[str, Any]) -> str:
+    value = candidate.get("id")
+    if value:
+        return str(value)
+
+    return "|".join(
+        [
+            str(candidate.get("lang") or ""),
+            str(candidate.get("set") or ""),
+            str(candidate.get("collector_number") or ""),
+            str(candidate.get("name") or ""),
+        ]
+    )
+
+
+def candidate_label(candidate: dict[str, Any]) -> str:
+    name = (
+        candidate.get("printed_name")
+        or candidate.get("name")
+        or "Carta sin nombre"
+    )
+    set_code = str(candidate.get("set") or "?").upper()
+    collector = str(candidate.get("collector_number") or "?")
+    language = str(candidate.get("lang") or "?").upper()
+    quality = (
+        "alta resolución"
+        if candidate.get("image_status") == "highres_scan"
+        or candidate.get("highres_image") is True
+        else str(candidate.get("image_status") or "calidad desconocida")
+    )
+    return f"{name} · {set_code} {collector} · {language} · {quality}"
+
+
+def preview_urls(candidate: dict[str, Any] | None) -> list[str]:
+    if not isinstance(candidate, dict):
+        return []
+
+    urls: list[str] = []
+    image_uris = candidate.get("image_uris")
+    if isinstance(image_uris, dict):
+        url = _first_image_url(image_uris)
+        if url:
+            urls.append(url)
+        return urls
+
+    faces = candidate.get("card_faces")
+    if isinstance(faces, list):
+        for face in faces:
+            if not isinstance(face, dict):
+                continue
+            face_uris = face.get("image_uris")
+            if not isinstance(face_uris, dict):
+                continue
+            url = _first_image_url(face_uris)
+            if url:
+                urls.append(url)
+
+    return urls
+
+
+def review_row(index: int, card: ResolvedCard) -> dict[str, str | int]:
+    reasons = problem_reasons(card)
+    return {
+        "índice": index,
+        "cantidad": card.source.quantity,
+        "carta": card.source.name,
+        "impresión solicitada": _printing(
+            card.source.set_code,
+            card.source.collector_number,
+        ),
+        "impresión elegida": _printing(
+            card.selected_set,
+            card.collector_number,
+        ),
+        "idioma": card.language or "",
+        "calidad": card.image_status or "",
+        "estado": card.status,
+        "revisión": ", ".join(reasons) if reasons else "correcta",
+    }
+
+
+def _first_image_url(image_uris: dict[str, Any]) -> str | None:
+    for key in ("normal", "large", "png", "small"):
+        value = image_uris.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _printing(set_code: str | None, collector: str | None) -> str:
+    if not set_code and not collector:
+        return ""
+    return f"{(set_code or '?').upper()} {collector or '?'}"

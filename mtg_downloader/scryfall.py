@@ -165,6 +165,15 @@ class ScryfallClient:
             )
 
         status, selected = selected_pair
+        return self.resolve_from_candidate(card, selected, status=status)
+
+    def resolve_from_candidate(
+        self,
+        card: DeckCard,
+        selected: dict[str, Any],
+        *,
+        status: str = "Selección manual",
+    ) -> ResolvedCard:
         faces = self._extract_faces(selected)
         if not faces:
             return ResolvedCard(
@@ -177,7 +186,10 @@ class ScryfallClient:
                 scryfall_data=selected,
                 image_status=selected.get("image_status"),
                 highres_image=selected.get("highres_image"),
-                error="Scryfall encontró la carta, pero no ofrece una imagen descargable.",
+                error=(
+                    "Scryfall encontró la carta, pero no ofrece una "
+                    "imagen descargable."
+                ),
             )
 
         return ResolvedCard(
@@ -189,10 +201,59 @@ class ScryfallClient:
             collector_number=str(selected.get("collector_number") or ""),
             faces=faces,
             scryfall_data=selected,
-            downloaded_format=faces[0].extension.lstrip(".").upper() if faces else None,
+            downloaded_format=faces[0].extension.lstrip(".").upper(),
             image_status=selected.get("image_status"),
             highres_image=selected.get("highres_image"),
         )
+
+    def search_alternatives(
+        self,
+        name: str,
+        *,
+        languages: tuple[str, ...] = ("es", "en"),
+        highres_only: bool = False,
+        max_results: int = 12,
+    ) -> list[dict[str, Any]]:
+        if max_results < 1:
+            return []
+
+        language_groups: list[list[dict[str, Any]]] = []
+        for language in languages:
+            candidates = [
+                candidate
+                for candidate in self._search_printings(name, language)
+                if self._has_usable_image(candidate)
+                and (not highres_only or self._is_highres(candidate))
+            ]
+            candidates = sorted(
+                candidates,
+                key=lambda candidate: not self._is_highres(candidate),
+            )
+            language_groups.append(candidates)
+
+        selected: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        quota = max(1, max_results // max(len(language_groups), 1))
+
+        for group in language_groups:
+            for candidate in group[:quota]:
+                key = self._candidate_identity(candidate)
+                if key not in seen:
+                    seen.add(key)
+                    selected.append(candidate)
+
+        if len(selected) < max_results:
+            for group in language_groups:
+                for candidate in group[quota:]:
+                    key = self._candidate_identity(candidate)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    selected.append(candidate)
+                    if len(selected) >= max_results:
+                        return selected
+
+        return selected[:max_results]
 
     def download_image(self, face: ImageFace) -> bytes:
         key = hashlib.sha256(face.url.encode("utf-8")).hexdigest()
@@ -220,13 +281,11 @@ class ScryfallClient:
         path = f"/cards/{encoded_set}/{encoded_number}{suffix}"
         return self._request_json(path, allow_not_found=True)
 
-    def _find_printing(
+    def _search_printings(
         self,
         name: str,
-        *,
         language: str,
-        prefer_highres: bool,
-    ) -> dict[str, Any] | None:
+    ) -> list[dict[str, Any]]:
         escaped = name.replace("\\", "\\\\").replace('"', '\\"')
         data = self._request_json(
             "/cards/search",
@@ -239,16 +298,42 @@ class ScryfallClient:
             allow_not_found=True,
         )
         if not data:
-            return None
+            return []
 
         cards = data.get("data") if isinstance(data, dict) else None
         if not isinstance(cards, list):
-            return None
+            return []
 
-        usable = [
+        return [
             candidate
             for candidate in cards
-            if isinstance(candidate, dict) and self._has_usable_image(candidate)
+            if isinstance(candidate, dict)
+        ]
+
+    @staticmethod
+    def _candidate_identity(candidate: dict[str, Any]) -> str:
+        if candidate.get("id"):
+            return str(candidate["id"])
+        return "|".join(
+            [
+                str(candidate.get("lang") or ""),
+                str(candidate.get("set") or ""),
+                str(candidate.get("collector_number") or ""),
+                str(candidate.get("name") or ""),
+            ]
+        )
+
+    def _find_printing(
+        self,
+        name: str,
+        *,
+        language: str,
+        prefer_highres: bool,
+    ) -> dict[str, Any] | None:
+        usable = [
+            candidate
+            for candidate in self._search_printings(name, language)
+            if self._has_usable_image(candidate)
         ]
         if prefer_highres:
             highres = next(
