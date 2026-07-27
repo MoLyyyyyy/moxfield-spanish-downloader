@@ -1,13 +1,12 @@
 # Moxfield Cartas ES
 
-Aplicación local que recibe un enlace público de Moxfield y genera un ZIP
+Aplicación que recibe una exportación de texto de Moxfield y genera un ZIP
 con las imágenes de las cartas, priorizando versiones oficiales en español
 disponibles en Scryfall.
 
 ## Funciones
 
-- Lee un mazo público mediante su enlace de Moxfield.
-- Permite pegar una exportación de texto como respaldo.
+- Permite pegar una exportación de texto o subir un archivo `.txt`.
 - Busca primero la misma edición y número de coleccionista en español.
 - Si no existe, busca esa misma edición en inglés.
 - Si tampoco existe, busca otra impresión oficial española.
@@ -27,20 +26,17 @@ disponibles en Scryfall.
 
 ## Uso
 
-1. Pega el enlace público de Moxfield.
+1. Exporta o copia la lista del mazo desde Moxfield.
 2. Elige la calidad y opciones.
 3. Pulsa **Preparar ZIP**.
 4. Revisa la tabla.
 5. Pulsa **Descargar ZIP**.
 
-### Si Moxfield bloquea la lectura
-
-Moxfield usa un endpoint interno no documentado y puede protegerlo mediante
-Cloudflare. En ese caso:
+### Cómo introducir el mazo
 
 1. Abre el mazo en Moxfield.
 2. Utiliza una exportación de texto con cantidad y nombre.
-3. Pégala en **Exportación de texto de respaldo**.
+3. Pégala en **Lista del mazo** o sube el archivo `.txt`.
 4. Pulsa de nuevo **Preparar ZIP**.
 
 Ejemplo:
@@ -90,7 +86,6 @@ Este modo ignora la edición indicada en la lista y prioriza únicamente el idio
 
 ## Avisos
 
-- La integración de Moxfield puede necesitar ajustes futuros.
 - No todas las cartas tienen una imagen oficial en español.
 - Herramienta no oficial para uso personal.
 
@@ -170,3 +165,17 @@ combinar manualmente edición, idioma y calidad:
 Los controles técnicos siguen disponibles en **Opciones avanzadas**, donde se
 pueden personalizar la prioridad de impresión, el idioma, la calidad mínima y
 el formato del archivo.
+
+## Entrada del mazo
+
+La aplicación ya no intenta leer enlaces de Moxfield. Esta integración dependía
+de una API interna no documentada y podía fallar por cambios o bloqueos de
+Cloudflare.
+
+Ahora existen dos formas estables de introducir el mazo:
+
+1. Pegar directamente la exportación de texto.
+2. Subir un archivo `.txt` con esa exportación.
+
+Se conservan las cantidades, edición, número de coleccionista y marcas como
+`*F*`, que se ignoran para seleccionar la imagen.
