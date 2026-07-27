@@ -33,8 +33,9 @@ with st.expander("Cómo funciona", expanded=False):
 4. Si está permitido, se utiliza inglés como respaldo.
 5. Se genera un ZIP con las imágenes y un `informe.csv`.
 
-Para la mejor uniformidad visual, usa **PNG**. Es la opción recomendada y suele
-evitar diferencias de nitidez entre cartas.
+El formato PNG evita compresión adicional, pero no puede arreglar un escaneo de
+origen pobre. El control de calidad puede detectar las impresiones marcadas por
+Scryfall como `lowres` y buscar otra alternativa antes de descargarlas.
 
 Moxfield puede bloquear las consultas automáticas. En ese caso, exporta el mazo
 como texto desde Moxfield y pégalo en el campo de respaldo.
@@ -65,6 +66,26 @@ with right:
         index=0,
     )
     image_quality = "png" if image_quality_label.startswith("PNG") else "large"
+
+    scan_quality_label = st.selectbox(
+        "Control de calidad del escaneo",
+        [
+            "Preferir alta resolución — usar low-res solo si no hay alternativa",
+            "Respetar prioridad — aceptar también imágenes low-res",
+            "Solo alta resolución — omitir imágenes low-res",
+        ],
+        index=0,
+        help=(
+            "Scryfall clasifica las imágenes como highres_scan, lowres, "
+            "placeholder o missing. Preferir alta resolución puede cambiar de "
+            "idioma o edición antes de aceptar una imagen low-res."
+        ),
+    )
+    quality_mode = {
+        "Preferir alta resolución — usar low-res solo si no hay alternativa": "prefer_highres",
+        "Respetar prioridad — aceptar también imágenes low-res": "allow_lowres",
+        "Solo alta resolución — omitir imágenes low-res": "highres_only",
+    }[scan_quality_label]
 
     resolution_label = st.selectbox(
         "Modo de búsqueda de impresión",
@@ -159,6 +180,7 @@ if st.button("Preparar ZIP", type="primary", use_container_width=True):
                         card,
                         allow_english_fallback=allow_english,
                         resolution_mode=resolution_mode,
+                        quality_mode=quality_mode,
                     )
                 )
                 progress.progress(
@@ -200,9 +222,8 @@ if st.session_state.get("report") is not None:
     report = st.session_state["report"]
     st.subheader("Resultado")
     st.caption(
-        "Consejo: si notas que unas cartas se ven mejor que otras, usa el modo "
-        "PNG. Algunas diferencias también pueden venir de la calidad del escaneo "
-        "disponible para una edición concreta en Scryfall."
+        "El informe muestra `estado_imagen` y `alta_resolucion`. Las cartas "
+        "marcadas como `lowres` pueden verse pixeladas aunque se descarguen en PNG."
     )
     st.dataframe(
         pd.DataFrame(report),
@@ -215,12 +236,18 @@ if st.session_state.get("report") is not None:
     missing = sum(
         1
         for row in report
-        if row["estado"] in {"No encontrada", "Sin imagen"}
+        if row["estado"] in {
+            "No encontrada",
+            "Sin imagen",
+            "Sin alta resolución",
+        }
     )
-    metric1, metric2, metric3 = st.columns(3)
+    lowres = sum(1 for row in report if row["estado_imagen"] == "lowres")
+    metric1, metric2, metric3, metric4 = st.columns(4)
     metric1.metric("En español", spanish)
     metric2.metric("Respaldo en inglés", english)
-    metric3.metric("Sin imagen", missing)
+    metric3.metric("Low-res utilizadas", lowres)
+    metric4.metric("Sin imagen", missing)
 
     st.download_button(
         "Descargar ZIP",

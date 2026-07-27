@@ -50,37 +50,41 @@ class ScryfallClient:
         card: DeckCard,
         allow_english_fallback: bool = True,
         resolution_mode: str = "exact_first",
+        quality_mode: str = "prefer_highres",
     ) -> ResolvedCard:
-        selected: dict[str, Any] | None = None
-        status = ""
-
         if resolution_mode not in {"exact_first", "exact_only", "flexible"}:
             raise ValueError(f"Modo de resolución desconocido: {resolution_mode}")
+        if quality_mode not in {"allow_lowres", "prefer_highres", "highres_only"}:
+            raise ValueError(f"Modo de calidad desconocido: {quality_mode}")
 
         has_exact_printing = bool(card.set_code and card.collector_number)
+        prefer_highres_search = quality_mode != "allow_lowres"
+        candidates: list[tuple[str, dict[str, Any]]] = []
+
+        def add_candidate(status: str, candidate: dict[str, Any] | None) -> None:
+            if candidate and self._has_usable_image(candidate):
+                candidates.append((status, candidate))
 
         if resolution_mode in {"exact_first", "exact_only"} and has_exact_printing:
-            # 1. Misma impresión en español.
-            selected = self._get_card_by_printing(
-                card.set_code or "",
-                card.collector_number or "",
-                language="es",
-            )
-            if selected:
-                status = "Misma impresión en español"
-
-            # 2. Misma impresión en inglés.
-            if not selected and allow_english_fallback:
-                selected = self._get_card_by_printing(
+            add_candidate(
+                "Misma impresión en español",
+                self._get_card_by_printing(
                     card.set_code or "",
                     card.collector_number or "",
-                    language=None,
+                    language="es",
+                ),
+            )
+            if allow_english_fallback:
+                add_candidate(
+                    "Misma impresión en inglés",
+                    self._get_card_by_printing(
+                        card.set_code or "",
+                        card.collector_number or "",
+                        language=None,
+                    ),
                 )
-                if selected:
-                    status = "Misma impresión en inglés"
 
         if resolution_mode == "exact_only":
-            # Si no se indicó edición/número, no hay una impresión exacta que respetar.
             if not has_exact_printing:
                 return ResolvedCard(
                     source=card,
@@ -92,36 +96,75 @@ class ScryfallClient:
                 )
 
         elif resolution_mode == "exact_first":
-            # 3. Cualquier impresión oficial en español.
-            if not selected:
-                selected = self._find_spanish_printing(card.name)
-                if selected:
-                    status = "Otra impresión en español"
-
-            # 4. Otra impresión en inglés.
-            if not selected and allow_english_fallback:
-                selected = self._get_named(card.name)
-                if selected:
-                    status = "Otra impresión en inglés"
+            add_candidate(
+                "Otra impresión en español",
+                self._find_printing(
+                    card.name,
+                    language="es",
+                    prefer_highres=prefer_highres_search,
+                ),
+            )
+            if allow_english_fallback:
+                add_candidate(
+                    "Otra impresión en inglés",
+                    self._find_printing(
+                        card.name,
+                        language="en",
+                        prefer_highres=prefer_highres_search,
+                    ),
+                )
 
         elif resolution_mode == "flexible":
-            # Ignora la impresión indicada y prioriza el idioma.
-            selected = self._find_spanish_printing(card.name)
-            if selected:
-                status = "Impresión flexible en español"
+            add_candidate(
+                "Impresión flexible en español",
+                self._find_printing(
+                    card.name,
+                    language="es",
+                    prefer_highres=prefer_highres_search,
+                ),
+            )
+            if allow_english_fallback:
+                add_candidate(
+                    "Impresión flexible en inglés",
+                    self._find_printing(
+                        card.name,
+                        language="en",
+                        prefer_highres=prefer_highres_search,
+                    ),
+                )
 
-            if not selected and allow_english_fallback:
-                selected = self._get_named(card.name)
-                if selected:
-                    status = "Impresión flexible en inglés"
+        selected_pair: tuple[str, dict[str, Any]] | None = None
+        if quality_mode == "allow_lowres":
+            selected_pair = candidates[0] if candidates else None
+        else:
+            selected_pair = next(
+                (
+                    pair
+                    for pair in candidates
+                    if self._is_highres(pair[1])
+                ),
+                None,
+            )
+            if not selected_pair and quality_mode == "prefer_highres":
+                selected_pair = candidates[0] if candidates else None
 
-        if not selected:
+        if not selected_pair:
+            quality_error = (
+                "No se encontró una impresión con imagen de alta resolución."
+                if quality_mode == "highres_only" and candidates
+                else "No se encontró una imagen válida en Scryfall."
+            )
             return ResolvedCard(
                 source=card,
-                status="No encontrada",
-                error="No se encontró una imagen válida en Scryfall.",
+                status=(
+                    "Sin alta resolución"
+                    if quality_mode == "highres_only" and candidates
+                    else "No encontrada"
+                ),
+                error=quality_error,
             )
 
+        status, selected = selected_pair
         faces = self._extract_faces(selected)
         if not faces:
             return ResolvedCard(
@@ -132,6 +175,8 @@ class ScryfallClient:
                 selected_set=selected.get("set"),
                 collector_number=str(selected.get("collector_number") or ""),
                 scryfall_data=selected,
+                image_status=selected.get("image_status"),
+                highres_image=selected.get("highres_image"),
                 error="Scryfall encontró la carta, pero no ofrece una imagen descargable.",
             )
 
@@ -145,6 +190,8 @@ class ScryfallClient:
             faces=faces,
             scryfall_data=selected,
             downloaded_format=faces[0].extension.lstrip(".").upper() if faces else None,
+            image_status=selected.get("image_status"),
+            highres_image=selected.get("highres_image"),
         )
 
     def download_image(self, face: ImageFace) -> bytes:
@@ -173,12 +220,18 @@ class ScryfallClient:
         path = f"/cards/{encoded_set}/{encoded_number}{suffix}"
         return self._request_json(path, allow_not_found=True)
 
-    def _find_spanish_printing(self, name: str) -> dict[str, Any] | None:
+    def _find_printing(
+        self,
+        name: str,
+        *,
+        language: str,
+        prefer_highres: bool,
+    ) -> dict[str, Any] | None:
         escaped = name.replace("\\", "\\\\").replace('"', '\\"')
         data = self._request_json(
             "/cards/search",
             params={
-                "q": f'!"{escaped}" lang:es game:paper',
+                "q": f'!"{escaped}" lang:{language} game:paper',
                 "order": "released",
                 "dir": "desc",
                 "unique": "prints",
@@ -187,17 +240,34 @@ class ScryfallClient:
         )
         if not data:
             return None
+
         cards = data.get("data") if isinstance(data, dict) else None
         if not isinstance(cards, list):
             return None
-        for candidate in cards:
-            if isinstance(candidate, dict) and candidate.get("image_status") != "missing":
-                return candidate
-        return next((item for item in cards if isinstance(item, dict)), None)
 
-    def _get_named(self, name: str) -> dict[str, Any] | None:
-        return self._request_json(
-            "/cards/named", params={"exact": name}, allow_not_found=True
+        usable = [
+            candidate
+            for candidate in cards
+            if isinstance(candidate, dict) and self._has_usable_image(candidate)
+        ]
+        if prefer_highres:
+            highres = next(
+                (candidate for candidate in usable if self._is_highres(candidate)),
+                None,
+            )
+            if highres:
+                return highres
+        return usable[0] if usable else None
+
+    @staticmethod
+    def _has_usable_image(card: dict[str, Any]) -> bool:
+        return card.get("image_status") not in {"missing", "placeholder"}
+
+    @staticmethod
+    def _is_highres(card: dict[str, Any]) -> bool:
+        return (
+            card.get("image_status") == "highres_scan"
+            or card.get("highres_image") is True
         )
 
     def _extract_faces(self, card: dict[str, Any]) -> list[ImageFace]:

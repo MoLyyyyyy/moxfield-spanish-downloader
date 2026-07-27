@@ -9,39 +9,36 @@ class DummyScryfallClient(ScryfallClient):
         super().__init__(Path("/tmp/moxfield_test_cache"), image_quality="png")
         self.calls = []
 
-    def _get_card_by_printing(self, set_code: str, collector_number: str, language: str | None):
+    def _get_card_by_printing(
+        self,
+        set_code: str,
+        collector_number: str,
+        language: str | None,
+    ):
         self.calls.append(("printing", set_code, collector_number, language))
         if language == "es":
             return None
-        if language is None:
-            return {
-                "lang": "en",
-                "name": "Arcane Signet",
-                "set": set_code,
-                "collector_number": collector_number,
-                "image_uris": {"png": "https://example.com/card.png"},
-            }
-        return None
-
-    def _find_spanish_printing(self, name: str):
-        self.calls.append(("spanish", name))
-        return {
-            "lang": "es",
-            "printed_name": "Sello Arcano",
-            "name": "Arcane Signet",
-            "set": "plst",
-            "collector_number": "1",
-            "image_uris": {"png": "https://example.com/es.png"},
-        }
-
-    def _get_named(self, name: str):
-        self.calls.append(("named", name))
         return {
             "lang": "en",
             "name": "Arcane Signet",
+            "set": set_code,
+            "collector_number": collector_number,
+            "image_status": "highres_scan",
+            "highres_image": True,
+            "image_uris": {"png": "https://example.com/card.png"},
+        }
+
+    def _find_printing(self, name, *, language, prefer_highres):
+        self.calls.append(("find", name, language, prefer_highres))
+        return {
+            "lang": language,
+            "printed_name": "Sello Arcano" if language == "es" else None,
+            "name": "Arcane Signet",
             "set": "plst",
-            "collector_number": "2",
-            "image_uris": {"png": "https://example.com/en.png"},
+            "collector_number": "1",
+            "image_status": "highres_scan",
+            "highres_image": True,
+            "image_uris": {"png": f"https://example.com/{language}.png"},
         }
 
 
@@ -56,10 +53,14 @@ def test_exact_english_is_checked_before_other_spanish_printing() -> None:
                 collector_number="57",
             ),
             allow_english_fallback=True,
+            quality_mode="allow_lowres",
         )
     finally:
         client.close()
 
     assert resolved.status == "Misma impresión en inglés"
     assert resolved.language == "en"
-    assert ("spanish", "Arcane Signet") not in client.calls[:2]
+    assert client.calls[:2] == [
+        ("printing", "tmc", "57", "es"),
+        ("printing", "tmc", "57", None),
+    ]

@@ -4,6 +4,19 @@ from mtg_downloader.models import DeckCard
 from mtg_downloader.scryfall import ScryfallClient
 
 
+def candidate(language: str):
+    return {
+        "lang": language,
+        "printed_name": "Montaña" if language == "es" else None,
+        "name": "Mountain",
+        "set": "m21",
+        "collector_number": "312",
+        "image_status": "highres_scan",
+        "highres_image": True,
+        "image_uris": {"png": f"https://example.com/{language}.png"},
+    }
+
+
 class ModeClient(ScryfallClient):
     def __init__(self) -> None:
         super().__init__(Path("/tmp/moxfield_mode_cache"), image_quality="png")
@@ -13,26 +26,9 @@ class ModeClient(ScryfallClient):
         self.calls.append(("printing", set_code, collector_number, language))
         return None
 
-    def _find_spanish_printing(self, name):
-        self.calls.append(("spanish", name))
-        return {
-            "lang": "es",
-            "printed_name": "Montaña",
-            "name": "Mountain",
-            "set": "m21",
-            "collector_number": "312",
-            "image_uris": {"png": "https://example.com/es.png"},
-        }
-
-    def _get_named(self, name):
-        self.calls.append(("named", name))
-        return {
-            "lang": "en",
-            "name": name,
-            "set": "m21",
-            "collector_number": "312",
-            "image_uris": {"png": "https://example.com/en.png"},
-        }
+    def _find_printing(self, name, *, language, prefer_highres):
+        self.calls.append(("find", name, language, prefer_highres))
+        return candidate(language)
 
 
 def test_exact_only_does_not_change_printing() -> None:
@@ -51,8 +47,7 @@ def test_exact_only_does_not_change_printing() -> None:
         client.close()
 
     assert result.status == "No encontrada"
-    assert ("spanish", "Mountain") not in client.calls
-    assert ("named", "Mountain") not in client.calls
+    assert not any(call[0] == "find" for call in client.calls)
 
 
 def test_flexible_ignores_exact_printing() -> None:

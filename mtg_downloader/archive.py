@@ -51,6 +51,12 @@ def build_zip(
                 "edicion_elegida": resolved.selected_set or "",
                 "numero_elegido": resolved.collector_number or "",
                 "formato_descarga": resolved.downloaded_format or "",
+                "estado_imagen": resolved.image_status or "",
+                "alta_resolucion": (
+                    "sí" if resolved.highres_image is True
+                    else "no" if resolved.highres_image is False
+                    else ""
+                ),
                 "error": resolved.error or "",
             }
             report.append(row)

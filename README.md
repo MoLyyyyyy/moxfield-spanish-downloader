@@ -124,3 +124,30 @@ razones:
 
 El `informe.csv` incluye ahora una columna `formato_descarga` para que puedas
 ver si esa carta se bajó como PNG o JPG.
+
+## Despliegue web
+
+La aplicación está preparada para Streamlit Community Cloud.
+
+- Archivo principal: `app.py`
+- Rama recomendada: `main`
+- Python recomendado: `3.12`
+- Dependencias: `requirements.txt`
+
+Consulta [`DEPLOY_STREAMLIT.md`](DEPLOY_STREAMLIT.md) para ver todos los pasos.
+
+
+## Control de calidad del escaneo
+
+El formato PNG no mejora por sí solo un escaneo de origen pixelado. La
+aplicación consulta los metadatos de Scryfall y permite elegir:
+
+- **Preferir alta resolución**: busca primero candidatos `highres_scan`; solo
+  usa una imagen `lowres` cuando no existe ninguna alternativa compatible.
+- **Respetar prioridad**: mantiene estrictamente el orden de edición e idioma,
+  aunque la primera imagen disponible esté marcada como `lowres`.
+- **Solo alta resolución**: no descarga imágenes `lowres`.
+
+El informe incluye las columnas `estado_imagen` y `alta_resolucion`. Ten en
+cuenta que priorizar calidad puede hacer que se seleccione otra edición o una
+versión inglesa antes que una impresión española de baja resolución.

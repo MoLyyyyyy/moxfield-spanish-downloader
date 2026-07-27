@@ -32,3 +32,5 @@ class ResolvedCard:
     scryfall_data: dict[str, Any] | None = None
     error: str | None = None
     downloaded_format: str | None = None
+    image_status: str | None = None
+    highres_image: bool | None = None
