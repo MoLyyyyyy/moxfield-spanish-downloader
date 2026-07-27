@@ -159,8 +159,9 @@ combinar manualmente edición, idioma y calidad:
   priorizando español y después inglés aunque la imagen sea low-res.
 - **Máxima calidad**: ignora la edición y solo acepta imágenes de alta
   resolución, primero en español y después en inglés.
-- **Solo español**: nunca utiliza imágenes inglesas; puede cambiar de edición
-  para encontrar una impresión española de mejor calidad.
+- **Solo español**: intenta resolver siempre en español; puede cambiar de edición
+  para encontrar una impresión española de mejor calidad. Si no existe ninguna imagen en
+  español, usa inglés como último recurso.
 
 Los controles técnicos siguen disponibles en **Opciones avanzadas**, donde se
 pueden personalizar la prioridad de impresión, el idioma, la calidad mínima y
@@ -297,3 +298,12 @@ En la vista del mazo, las cartas se muestran primero en un bloque de
 **Cartas con problemas** y después en otro bloque de **Cartas correctas**.
 Dentro de cada bloque se siguen agrupando por categoría para que sea más fácil
 revisar y editar primero lo que necesita atención.
+
+
+### Respaldo español para cartas low-res
+
+Si Scryfall solo encuentra una impresión en español de baja resolución, la
+aplicación intenta mejorarla automáticamente con **MagicCards.info** antes de
+darla por válida. Este respaldo solo se usa para imágenes españolas low-res;
+las imágenes normales de Scryfall y los diseños de MPCFill siguen funcionando
+igual que antes.

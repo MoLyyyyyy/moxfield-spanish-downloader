@@ -128,6 +128,7 @@ with right:
     resolution_mode = selected_profile.resolution_mode
     quality_mode = selected_profile.quality_mode
     allow_english = selected_profile.allow_english
+    allow_english_if_missing = selected_profile.allow_english_if_missing
     image_quality = "png"
 
     with st.expander("Opciones avanzadas", expanded=False):
@@ -471,6 +472,7 @@ if st.button("Analizar mazo", type="primary", use_container_width=True):
                     client.resolve(
                         card,
                         allow_english_fallback=allow_english,
+                        allow_english_if_missing=allow_english_if_missing,
                         resolution_mode=resolution_mode,
                         quality_mode=quality_mode,
                     )

@@ -11,6 +11,7 @@ class DownloadProfile:
     resolution_mode: str
     quality_mode: str
     allow_english: bool
+    allow_english_if_missing: bool = False
 
 
 PROFILES: tuple[DownloadProfile, ...] = (
@@ -53,12 +54,14 @@ PROFILES: tuple[DownloadProfile, ...] = (
         key="spanish_only",
         label="Solo español",
         description=(
-            "Nunca utiliza imágenes inglesas. Intenta respetar la edición, "
-            "pero puede cambiar a otra impresión española de mejor calidad."
+            "Prioriza siempre el español. Intenta respetar la edición, "
+            "pero puede cambiar a otra impresión española de mejor calidad. "
+            "Si no existe ninguna imagen en español, usa inglés como último recurso."
         ),
         resolution_mode="exact_first",
         quality_mode="prefer_highres",
         allow_english=False,
+        allow_english_if_missing=True,
     ),
 )
 

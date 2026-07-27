@@ -10,6 +10,7 @@ from urllib.parse import quote
 import httpx
 
 from .image_processing import process_mpc_image_bytes
+from .magiccardsinfo import MagicCardsInfoClient
 from .models import DeckCard, ImageFace, ResolvedCard
 
 SCRYFALL_API = "https://api.scryfall.com"
@@ -38,8 +39,13 @@ class ScryfallClient:
                 "Accept": "application/json",
             },
         )
+        self.magiccardsinfo = MagicCardsInfoClient(
+            cache_dir,
+            http_client=self.client,
+        )
 
     def close(self) -> None:
+        self.magiccardsinfo.close()
         self.client.close()
 
     def __enter__(self) -> "ScryfallClient":
@@ -52,6 +58,7 @@ class ScryfallClient:
         self,
         card: DeckCard,
         allow_english_fallback: bool = True,
+        allow_english_if_missing: bool = False,
         resolution_mode: str = "exact_first",
         quality_mode: str = "prefer_highres",
     ) -> ResolvedCard:
@@ -151,6 +158,76 @@ class ScryfallClient:
             if not selected_pair and quality_mode == "prefer_highres":
                 selected_pair = candidates[0] if candidates else None
 
+        if (
+            not selected_pair
+            and allow_english_if_missing
+            and not allow_english_fallback
+            and not candidates
+        ):
+            english_candidates: list[tuple[str, dict[str, Any]]] = []
+
+            def add_english_candidate(
+                status: str,
+                candidate: dict[str, Any] | None,
+            ) -> None:
+                if candidate and self._has_usable_image(candidate):
+                    english_candidates.append((status, candidate))
+
+            if (
+                resolution_mode in {"exact_first", "exact_only"}
+                and has_exact_printing
+            ):
+                add_english_candidate(
+                    "Misma impresión en inglés (sin imagen en español)",
+                    self._get_card_by_printing(
+                        card.set_code or "",
+                        card.collector_number or "",
+                        language=None,
+                    ),
+                )
+
+            if resolution_mode == "exact_first":
+                add_english_candidate(
+                    "Otra impresión en inglés (sin imagen en español)",
+                    self._find_printing(
+                        card.name,
+                        language="en",
+                        prefer_highres=prefer_highres_search,
+                    ),
+                )
+            elif resolution_mode == "flexible":
+                add_english_candidate(
+                    "Impresión flexible en inglés (sin imagen en español)",
+                    self._find_printing(
+                        card.name,
+                        language="en",
+                        prefer_highres=prefer_highres_search,
+                    ),
+                )
+
+            if quality_mode == "allow_lowres":
+                selected_pair = (
+                    english_candidates[0] if english_candidates else None
+                )
+            else:
+                selected_pair = next(
+                    (
+                        pair
+                        for pair in english_candidates
+                        if self._is_highres(pair[1])
+                    ),
+                    None,
+                )
+                if not selected_pair and quality_mode == "prefer_highres":
+                    selected_pair = (
+                        english_candidates[0] if english_candidates else None
+                    )
+            if english_candidates:
+                candidates.extend(english_candidates)
+
+        if not selected_pair:
+            selected_pair = self._find_magiccardsinfo_pair(card, candidates)
+
         if not selected_pair:
             quality_error = (
                 "No se encontró una impresión con imagen de alta resolución."
@@ -168,6 +245,13 @@ class ScryfallClient:
             )
 
         status, selected = selected_pair
+        selected_pair = self._maybe_upgrade_selected_pair_with_magiccardsinfo(
+            card,
+            status,
+            selected,
+        )
+        if selected_pair is not None:
+            status, selected = selected_pair
         return self.resolve_from_candidate(card, selected, status=status)
 
     def resolve_from_candidate(
@@ -199,6 +283,7 @@ class ScryfallClient:
         return ResolvedCard(
             source=card,
             status=status,
+            provider=str(selected.get("_provider") or "scryfall"),
             type_line=selected.get("type_line"),
             language=selected.get("lang"),
             printed_name=selected.get("printed_name") or selected.get("name"),
@@ -385,6 +470,74 @@ class ScryfallClient:
                 return highres
         return usable[0] if usable else None
 
+    def _find_magiccardsinfo_pair(
+        self,
+        card: DeckCard,
+        candidates: list[tuple[str, dict[str, Any]]],
+    ) -> tuple[str, dict[str, Any]] | None:
+        for status, candidate in candidates:
+            upgraded = self._maybe_upgrade_selected_pair_with_magiccardsinfo(
+                card,
+                status,
+                candidate,
+            )
+            if upgraded is not None:
+                return upgraded
+        return None
+
+    def _maybe_upgrade_selected_pair_with_magiccardsinfo(
+        self,
+        card: DeckCard,
+        status: str,
+        selected: dict[str, Any],
+    ) -> tuple[str, dict[str, Any]] | None:
+        if str(selected.get("_provider") or "scryfall") == "magiccardsinfo":
+            return None
+        if str(selected.get("lang") or "").casefold() != "es":
+            return None
+        if self._is_highres(selected):
+            return None
+        if selected.get("card_faces"):
+            return None
+
+        fallback = self._find_magiccardsinfo_fallback(card, selected)
+        if not fallback:
+            return None
+        return f"{status} · MagicCards.info", fallback
+
+    def _find_magiccardsinfo_fallback(
+        self,
+        card: DeckCard,
+        selected: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        try:
+            fallback = self.magiccardsinfo.find_spanish_scan(
+                name=str(
+                    selected.get("printed_name")
+                    or selected.get("name")
+                    or card.name
+                ),
+                set_code=str(
+                    selected.get("set")
+                    or card.set_code
+                    or ""
+                ) or None,
+                collector_number=str(
+                    selected.get("collector_number")
+                    or card.collector_number
+                    or ""
+                ) or None,
+            )
+        except Exception:
+            return None
+
+        if not fallback:
+            return None
+
+        merged = dict(selected)
+        merged.update(fallback)
+        return merged
+
     @staticmethod
     def _has_usable_image(card: dict[str, Any]) -> bool:
         return card.get("image_status") not in {"missing", "placeholder"}
@@ -397,10 +550,13 @@ class ScryfallClient:
         )
 
     def _extract_faces(self, card: dict[str, Any]) -> list[ImageFace]:
+        provider = str(card.get("_image_provider") or card.get("_provider") or "scryfall")
         image_uris = card.get("image_uris")
         if isinstance(image_uris, dict):
             face = self._face_from_uris(
-                card.get("printed_name") or card.get("name") or "Carta", image_uris
+                card.get("printed_name") or card.get("name") or "Carta",
+                image_uris,
+                provider=provider,
             )
             return [face] if face else []
 
@@ -418,13 +574,13 @@ class ScryfallClient:
                     or card_face.get("name")
                     or f"Cara {index}"
                 )
-                face = self._face_from_uris(str(label), uris)
+                face = self._face_from_uris(str(label), uris, provider=provider)
                 if face:
                     result.append(face)
         return result
 
     def _face_from_uris(
-        self, label: str, uris: dict[str, Any]
+        self, label: str, uris: dict[str, Any], *, provider: str = "scryfall"
     ) -> ImageFace | None:
         preferred = [self.image_quality]
         if self.image_quality == "png":
@@ -436,7 +592,12 @@ class ScryfallClient:
             url = uris.get(quality)
             if isinstance(url, str) and url:
                 extension = ".png" if quality == "png" else ".jpg"
-                return ImageFace(label=label, url=url, extension=extension)
+                return ImageFace(
+                    label=label,
+                    url=url,
+                    extension=extension,
+                    provider=provider,
+                )
         return None
 
     def _request_json(

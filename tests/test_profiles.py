@@ -28,3 +28,4 @@ def test_maximum_quality_rejects_lowres() -> None:
 def test_spanish_only_disables_english() -> None:
     profile = get_profile("spanish_only")
     assert profile.allow_english is False
+    assert profile.allow_english_if_missing is True

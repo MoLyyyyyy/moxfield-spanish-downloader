@@ -80,3 +80,59 @@ def test_exact_only_requires_printing_data() -> None:
         client.close()
 
     assert result.status == "Sin impresión exacta"
+
+
+
+def test_spanish_only_can_fallback_to_english_if_no_spanish_image_exists() -> None:
+    class MissingSpanishClient(ModeClient):
+        def _find_printing(self, name, *, language, prefer_highres):
+            self.calls.append(("find", name, language, prefer_highres))
+            if language == "es":
+                return None
+            return candidate("en")
+
+    client = MissingSpanishClient()
+    try:
+        result = client.resolve(
+            DeckCard(
+                quantity=1,
+                name="Mountain",
+                set_code="m20",
+                collector_number="279",
+            ),
+            allow_english_fallback=False,
+            allow_english_if_missing=True,
+            resolution_mode="exact_first",
+            quality_mode="prefer_highres",
+        )
+    finally:
+        client.close()
+
+    assert result.language == "en"
+    assert "sin imagen en español" in result.status.casefold()
+
+
+def test_spanish_only_does_not_fallback_if_spanish_image_exists() -> None:
+    class ExistingSpanishClient(ModeClient):
+        def _find_printing(self, name, *, language, prefer_highres):
+            self.calls.append(("find", name, language, prefer_highres))
+            return candidate(language)
+
+    client = ExistingSpanishClient()
+    try:
+        result = client.resolve(
+            DeckCard(
+                quantity=1,
+                name="Mountain",
+                set_code="m20",
+                collector_number="279",
+            ),
+            allow_english_fallback=False,
+            allow_english_if_missing=True,
+            resolution_mode="exact_first",
+            quality_mode="prefer_highres",
+        )
+    finally:
+        client.close()
+
+    assert result.language == "es"

@@ -85,3 +85,9 @@ def test_gallery_status_for_mpcfill() -> None:
     card = resolved("Sol Ring", "Artifact", provider="mpcfill")
     card.faces = [ImageFace("Sol Ring", "https://x/a.png", ".png")]
     assert "MPCFill" in gallery_status_label(card)
+
+
+
+def test_gallery_label_identifies_magiccardsinfo() -> None:
+    card = resolved("Sol Ring", "Artifact", provider="magiccardsinfo")
+    assert gallery_printing_label(card).startswith("MagicCards.info")
