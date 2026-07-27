@@ -11,7 +11,18 @@ import streamlit as st
 
 from mtg_downloader.archive import build_zip
 from mtg_downloader.decklist import parse_exported_decklist
+from mtg_downloader.image_processing import (
+    CROP_AUTO,
+    CROP_FORCE,
+    CROP_NONE,
+)
 from mtg_downloader.models import DeckCard, ResolvedCard
+from mtg_downloader.mpcfill import (
+    MpcFillClient,
+    MpcFillError,
+    mpc_candidate_key,
+    mpc_candidate_label,
+)
 from mtg_downloader.profiles import PROFILES, get_profile
 from mtg_downloader.review import (
     candidate_key,
@@ -217,6 +228,10 @@ def cache_dir() -> Path:
     return Path(tempfile.gettempdir()) / "moxfield_cartas_es_cache"
 
 
+def mpc_cache_dir() -> Path:
+    return Path(tempfile.gettempdir()) / "moxfield_cartas_es_mpcfill_cache"
+
+
 def previous_review_index(
     review_indices: list[int],
     current_index: int,
@@ -282,6 +297,7 @@ if st.button("Analizar mazo", type="primary", use_container_width=True):
         st.session_state["analysis_signature"] = current_signature()
         st.session_state["analysis_image_quality"] = image_quality
         st.session_state["alternatives"] = {}
+        st.session_state["mpc_alternatives"] = {}
         st.session_state["review_selected_index"] = 0
         st.session_state["review_selector_version"] = 0
         st.session_state.pop("review_only_problematic", None)
@@ -441,21 +457,46 @@ def render_review_panel() -> None:
 
     with top_left:
         st.markdown("#### Versión seleccionada")
-        current_urls = preview_urls(selected.scryfall_data)
-        if not current_urls:
-            current_urls = [face.url for face in selected.faces]
-        if current_urls:
-            for face_number, url in enumerate(current_urls, start=1):
-                caption = (
-                    "Versión seleccionada"
-                    if len(current_urls) == 1
-                    else f"Versión seleccionada · cara {face_number}"
-                )
+        if (
+            selected.provider == "mpcfill"
+            and isinstance(selected.scryfall_data, dict)
+        ):
+            try:
+                with MpcFillClient(mpc_cache_dir()) as mpc_client:
+                    selected_preview = mpc_client.preview_bytes(
+                        selected.scryfall_data,
+                        crop_mode=(
+                            selected.faces[0].crop_mode
+                            if selected.faces
+                            and selected.faces[0].crop_mode
+                            else CROP_AUTO
+                        ),
+                    )
                 spacer_left, image_col, spacer_right = st.columns([1, 2, 1])
                 with image_col:
-                    st.image(url, caption=caption, width=210)
+                    st.image(
+                        selected_preview,
+                        caption="Diseño MPCFill seleccionado",
+                        width=210,
+                    )
+            except MpcFillError as exc:
+                st.warning(str(exc))
         else:
-            st.warning("La selección actual no tiene imagen.")
+            current_urls = preview_urls(selected.scryfall_data)
+            if not current_urls:
+                current_urls = [face.url for face in selected.faces]
+            if current_urls:
+                for face_number, url in enumerate(current_urls, start=1):
+                    caption = (
+                        "Versión seleccionada"
+                        if len(current_urls) == 1
+                        else f"Versión seleccionada · cara {face_number}"
+                    )
+                    spacer_left, image_col, spacer_right = st.columns([1, 2, 1])
+                    with image_col:
+                        st.image(url, caption=caption, width=210)
+            else:
+                st.warning("La selección actual no tiene imagen.")
 
         st.markdown("##### Detalles")
         st.caption(
@@ -466,8 +507,12 @@ def render_review_panel() -> None:
             f"{selected.source.collector_number or '?'}  \n"
             f"**Elegida:** {(selected.selected_set or '?').upper()} "
             f"{selected.collector_number or '?'}  \n"
+            f"**Fuente:** "
+            f"{'MPCFill' if selected.provider == 'mpcfill' else 'Scryfall'}  \n"
             f"**Idioma:** {(selected.language or '?').upper()}  \n"
             f"**Calidad:** {selected.image_status or 'desconocida'}  \n"
+            f"**Recorte:** "
+            f"{selected.faces[0].crop_mode if selected.faces and selected.faces[0].crop_mode else 'no aplica'}  \n"
             f"**Estado:** {selected.status}"
         )
         reasons = problem_reasons(selected)
@@ -476,133 +521,325 @@ def render_review_panel() -> None:
         else:
             st.success("Selección correcta.")
 
+
     with top_right:
         st.markdown("#### Otras versiones")
-        st.caption(
-            "Las alternativas se cargan automáticamente para la carta actual. "
-            "Puedes filtrarlas por idioma, alta resolución y cantidad máxima."
-        )
-        alt_col1, alt_col2, alt_col3 = st.columns([2, 2, 1])
-        with alt_col1:
-            include_english_alternatives = st.checkbox(
-                "Incluir versiones en inglés",
-                value=True,
-                key=f"alt_english_{selected_index}",
-            )
-        with alt_col2:
-            only_highres_alternatives = st.checkbox(
-                "Mostrar solo alta resolución",
-                value=True,
-                key=f"alt_highres_{selected_index}",
-            )
-        with alt_col3:
-            alternatives_limit = st.selectbox(
-                "Máximo",
-                [6, 9, 12, 18],
-                index=2,
-                key=f"alt_limit_{selected_index}",
-            )
-
-        languages = (
-            ("es", "en")
-            if include_english_alternatives
-            else ("es",)
-        )
-        alternatives_state_key = (
-            f"{selected_index}|{','.join(languages)}|"
-            f"{only_highres_alternatives}|{alternatives_limit}"
+        version_source = st.radio(
+            "Fuente de versiones",
+            ["Oficiales · Scryfall", "Comunidad · MPCFill"],
+            horizontal=True,
+            key=f"version_source_{selected_index}",
         )
 
-        alternatives_cache = st.session_state.setdefault("alternatives", {})
-        if alternatives_state_key not in alternatives_cache:
-            try:
-                with st.spinner("Cargando impresiones alternativas..."):
-                    with ScryfallClient(
-                        cache_dir(),
-                        image_quality=st.session_state["analysis_image_quality"],
-                    ) as client:
-                        alternatives_cache[alternatives_state_key] = (
-                            client.search_alternatives(
-                                selected.source.name,
-                                languages=languages,
-                                highres_only=only_highres_alternatives,
-                                max_results=alternatives_limit,
-                            )
-                        )
-            except (ScryfallError, OSError) as exc:
-                st.error(str(exc))
-                alternatives_cache[alternatives_state_key] = []
-
-        alternatives = alternatives_cache.get(
-            alternatives_state_key,
-            [],
-        )
-
-        if alternatives:
+        if version_source == "Oficiales · Scryfall":
             st.caption(
-                "Elige una miniatura para guardar una versión y avanzar "
-                "automáticamente a la siguiente carta."
+                "Impresiones oficiales disponibles en Scryfall. "
+                "Puedes filtrarlas por idioma, resolución y cantidad."
             )
-            columns = st.columns(3)
-            for alternative_index, candidate in enumerate(alternatives):
-                column = columns[alternative_index % 3]
-                with column:
-                    with st.container(border=True):
-                        urls = preview_urls(candidate)
-                        if urls:
-                            img_left, img_center, img_right = st.columns([1, 2, 1])
-                            with img_center:
-                                st.image(urls[0], width=135)
-                        st.caption(candidate_label(candidate))
-                        if len(urls) > 1:
-                            st.caption(f"Carta de {len(urls)} caras.")
+            alt_col1, alt_col2, alt_col3 = st.columns([2, 2, 1])
+            with alt_col1:
+                include_english_alternatives = st.checkbox(
+                    "Incluir versiones en inglés",
+                    value=True,
+                    key=f"alt_english_{selected_index}",
+                )
+            with alt_col2:
+                only_highres_alternatives = st.checkbox(
+                    "Mostrar solo alta resolución",
+                    value=True,
+                    key=f"alt_highres_{selected_index}",
+                )
+            with alt_col3:
+                alternatives_limit = st.selectbox(
+                    "Máximo",
+                    [6, 9, 12, 18],
+                    index=2,
+                    key=f"alt_limit_{selected_index}",
+                )
 
-                        if st.button(
-                            "Elegir y continuar",
-                            key=(
-                                f"choose_{selected_index}_"
-                                f"{candidate_key(candidate)}"
-                            ),
-                            use_container_width=True,
-                        ):
-                            try:
-                                target_index = next_review_index(
-                                    review_indices,
-                                    selected_index,
+            languages = (
+                ("es", "en")
+                if include_english_alternatives
+                else ("es",)
+            )
+            alternatives_state_key = (
+                f"{selected_index}|{','.join(languages)}|"
+                f"{only_highres_alternatives}|{alternatives_limit}"
+            )
+
+            alternatives_cache = st.session_state.setdefault(
+                "alternatives",
+                {},
+            )
+            if alternatives_state_key not in alternatives_cache:
+                try:
+                    with st.spinner("Cargando impresiones oficiales..."):
+                        with ScryfallClient(
+                            cache_dir(),
+                            image_quality=st.session_state[
+                                "analysis_image_quality"
+                            ],
+                        ) as client:
+                            alternatives_cache[alternatives_state_key] = (
+                                client.search_alternatives(
+                                    selected.source.name,
+                                    languages=languages,
+                                    highres_only=only_highres_alternatives,
+                                    max_results=alternatives_limit,
                                 )
-                                with ScryfallClient(
-                                    cache_dir(),
-                                    image_quality=st.session_state[
-                                        "analysis_image_quality"
-                                    ],
-                                ) as client:
-                                    replacement = client.resolve_from_candidate(
-                                        selected.source,
-                                        candidate,
-                                        status="Selección manual",
+                            )
+                except (ScryfallError, OSError) as exc:
+                    st.error(str(exc))
+                    alternatives_cache[alternatives_state_key] = []
+
+            alternatives = alternatives_cache.get(
+                alternatives_state_key,
+                [],
+            )
+
+            if alternatives:
+                st.caption(
+                    "Elige una miniatura para guardar esa impresión y avanzar "
+                    "automáticamente a la siguiente carta."
+                )
+                columns = st.columns(3)
+                for alternative_index, candidate in enumerate(alternatives):
+                    column = columns[alternative_index % 3]
+                    with column:
+                        with st.container(border=True):
+                            urls = preview_urls(candidate)
+                            if urls:
+                                img_left, img_center, img_right = st.columns(
+                                    [1, 2, 1]
+                                )
+                                with img_center:
+                                    st.image(urls[0], width=135)
+                            st.caption(candidate_label(candidate))
+                            if len(urls) > 1:
+                                st.caption(f"Carta de {len(urls)} caras.")
+
+                            if st.button(
+                                "Elegir y continuar",
+                                key=(
+                                    f"choose_scryfall_{selected_index}_"
+                                    f"{candidate_key(candidate)}"
+                                ),
+                                use_container_width=True,
+                            ):
+                                try:
+                                    target_index = next_review_index(
+                                        review_indices,
+                                        selected_index,
                                     )
+                                    with ScryfallClient(
+                                        cache_dir(),
+                                        image_quality=st.session_state[
+                                            "analysis_image_quality"
+                                        ],
+                                    ) as client:
+                                        replacement = (
+                                            client.resolve_from_candidate(
+                                                selected.source,
+                                                candidate,
+                                                status="Selección manual",
+                                            )
+                                        )
 
-                                updated = list(
-                                    st.session_state["resolved_cards"]
-                                )
-                                updated[selected_index] = replacement
-                                st.session_state["resolved_cards"] = updated
-                                set_review_index(target_index)
-                                st.session_state["review_flash_message"] = (
-                                    f"Versión guardada para "
-                                    f"{selected.source.name}."
-                                )
-                                clear_generated_zip()
-                                st.rerun(scope="fragment")
-                            except (ScryfallError, OSError) as exc:
-                                st.error(str(exc))
+                                    updated = list(
+                                        st.session_state["resolved_cards"]
+                                    )
+                                    updated[selected_index] = replacement
+                                    st.session_state["resolved_cards"] = updated
+                                    set_review_index(target_index)
+                                    st.session_state[
+                                        "review_flash_message"
+                                    ] = (
+                                        f"Impresión oficial guardada para "
+                                        f"{selected.source.name}."
+                                    )
+                                    clear_generated_zip()
+                                    st.rerun(scope="fragment")
+                                except (ScryfallError, OSError) as exc:
+                                    st.error(str(exc))
+            else:
+                st.warning(
+                    "No se han encontrado impresiones oficiales con esos "
+                    "filtros."
+                )
+
         else:
-            st.warning(
-                "No se han encontrado alternativas con esos filtros. "
-                "Prueba a incluir inglés o permitir imágenes que no estén "
-                "marcadas como alta resolución."
+            st.caption(
+                "Diseños comunitarios de MPCFill. La previsualización ya "
+                "muestra cómo quedará la imagen después de eliminar el sangrado."
             )
 
+            mpc_col1, mpc_col2, mpc_col3, mpc_col4 = st.columns(
+                [1.4, 1.4, 1.7, 1]
+            )
+            with mpc_col1:
+                mpc_language_label = st.selectbox(
+                    "Idioma",
+                    ["Todos", "Español", "Inglés"],
+                    key=f"mpc_language_{selected_index}",
+                )
+            with mpc_col2:
+                minimum_dpi = st.selectbox(
+                    "DPI mínimo",
+                    [300, 600, 800, 1200],
+                    index=0,
+                    key=f"mpc_dpi_{selected_index}",
+                )
+            with mpc_col3:
+                crop_mode_label = st.selectbox(
+                    "Recorte",
+                    [
+                        "Automático · recomendado",
+                        "Mantener sangrado",
+                        "Forzar recorte MPC",
+                    ],
+                    key=f"mpc_crop_{selected_index}",
+                )
+            with mpc_col4:
+                mpc_limit = st.selectbox(
+                    "Máximo",
+                    [6, 9, 12],
+                    index=1,
+                    key=f"mpc_limit_{selected_index}",
+                )
+
+            mpc_languages = {
+                "Todos": (),
+                "Español": ("ES",),
+                "Inglés": ("EN",),
+            }[mpc_language_label]
+            crop_mode = {
+                "Automático · recomendado": CROP_AUTO,
+                "Mantener sangrado": CROP_NONE,
+                "Forzar recorte MPC": CROP_FORCE,
+            }[crop_mode_label]
+
+            mpc_state_key = (
+                f"{selected_index}|{','.join(mpc_languages) or 'all'}|"
+                f"{minimum_dpi}|{mpc_limit}"
+            )
+            mpc_cache = st.session_state.setdefault(
+                "mpc_alternatives",
+                {},
+            )
+
+            try:
+                with MpcFillClient(mpc_cache_dir()) as mpc_client:
+                    if mpc_state_key not in mpc_cache:
+                        with st.spinner(
+                            "Buscando diseños comunitarios en MPCFill..."
+                        ):
+                            mpc_cache[mpc_state_key] = (
+                                mpc_client.search_designs(
+                                    selected.source.name,
+                                    languages=mpc_languages,
+                                    minimum_dpi=minimum_dpi,
+                                    max_results=mpc_limit,
+                                )
+                            )
+
+                    mpc_designs = mpc_cache.get(mpc_state_key, [])
+
+                    if mpc_designs:
+                        st.caption(
+                            "Las miniaturas están recortadas con el modo "
+                            "seleccionado. El archivo del ZIP usará exactamente "
+                            "el mismo recorte."
+                        )
+                        columns = st.columns(3)
+                        for design_index, candidate in enumerate(mpc_designs):
+                            column = columns[design_index % 3]
+                            with column:
+                                with st.container(border=True):
+                                    preview_error = None
+                                    try:
+                                        preview_data = mpc_client.preview_bytes(
+                                            candidate,
+                                            crop_mode=crop_mode,
+                                        )
+                                    except MpcFillError as exc:
+                                        preview_data = None
+                                        preview_error = str(exc)
+
+                                    if preview_data:
+                                        img_left, img_center, img_right = (
+                                            st.columns([1, 2, 1])
+                                        )
+                                        with img_center:
+                                            st.image(
+                                                preview_data,
+                                                width=135,
+                                            )
+                                    elif preview_error:
+                                        st.warning(preview_error)
+
+                                    st.caption(
+                                        mpc_candidate_label(candidate)
+                                    )
+                                    source_link = candidate.get(
+                                        "sourceExternalLink"
+                                    )
+                                    if isinstance(source_link, str) and source_link:
+                                        st.link_button(
+                                            "Ver fuente",
+                                            source_link,
+                                            use_container_width=True,
+                                        )
+
+                                    if st.button(
+                                        "Elegir y continuar",
+                                        key=(
+                                            f"choose_mpc_{selected_index}_"
+                                            f"{mpc_candidate_key(candidate)}_"
+                                            f"{crop_mode}"
+                                        ),
+                                        use_container_width=True,
+                                    ):
+                                        target_index = next_review_index(
+                                            review_indices,
+                                            selected_index,
+                                        )
+                                        replacement = (
+                                            mpc_client.resolve_candidate(
+                                                selected.source,
+                                                candidate,
+                                                crop_mode=crop_mode,
+                                            )
+                                        )
+
+                                        updated = list(
+                                            st.session_state["resolved_cards"]
+                                        )
+                                        updated[selected_index] = replacement
+                                        st.session_state[
+                                            "resolved_cards"
+                                        ] = updated
+                                        set_review_index(target_index)
+                                        st.session_state[
+                                            "review_flash_message"
+                                        ] = (
+                                            f"Diseño MPCFill guardado para "
+                                            f"{selected.source.name}."
+                                        )
+                                        clear_generated_zip()
+                                        st.rerun(scope="fragment")
+                    else:
+                        st.warning(
+                            "MPCFill no ha encontrado diseños con esos filtros."
+                        )
+
+            except MpcFillError as exc:
+                st.warning(
+                    f"MPCFill no está disponible ahora mismo: {exc}"
+                )
+                st.caption(
+                    "Puedes seguir usando las versiones oficiales de Scryfall "
+                    "sin que este error afecte al resto del mazo."
+                )
 
 if signature_matches:
     render_review_panel()

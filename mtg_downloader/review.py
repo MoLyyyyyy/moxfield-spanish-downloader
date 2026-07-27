@@ -19,7 +19,9 @@ def problem_reasons(card: ResolvedCard) -> list[str]:
     selected_number = str(card.collector_number or "").casefold()
 
     if (
-        source_set
+        card.provider != "mpcfill"
+        and card.status != "Selección manual"
+        and source_set
         and source_number
         and selected_set
         and selected_number

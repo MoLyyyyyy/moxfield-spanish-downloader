@@ -9,6 +9,7 @@ from urllib.parse import quote
 
 import httpx
 
+from .image_processing import process_mpc_image_bytes
 from .models import DeckCard, ImageFace, ResolvedCard
 
 SCRYFALL_API = "https://api.scryfall.com"
@@ -256,7 +257,10 @@ class ScryfallClient:
         return selected[:max_results]
 
     def download_image(self, face: ImageFace) -> bytes:
-        key = hashlib.sha256(face.url.encode("utf-8")).hexdigest()
+        cache_identity = (
+            f"{face.url}|{face.provider}|{face.crop_mode or 'none'}|v2"
+        )
+        key = hashlib.sha256(cache_identity.encode("utf-8")).hexdigest()
         path = self.image_cache / f"{key}{face.extension}"
         if path.exists() and path.stat().st_size > 0:
             return path.read_bytes()
@@ -264,13 +268,21 @@ class ScryfallClient:
         response = self.client.get(
             face.url,
             headers={
-                "User-Agent": "MoxfieldCartasES/0.1 (aplicacion personal)",
+                "User-Agent": "MoxfieldCartasES/0.2 (aplicacion personal)",
                 "Accept": "image/avif,image/webp,image/png,image/jpeg,*/*",
             },
         )
         response.raise_for_status()
-        path.write_bytes(response.content)
-        return response.content
+        data = response.content
+
+        if face.provider == "mpcfill":
+            data = process_mpc_image_bytes(
+                data,
+                crop_mode=face.crop_mode or "auto",
+            ).data
+
+        path.write_bytes(data)
+        return data
 
     def _get_card_by_printing(
         self, set_code: str, collector_number: str, language: str | None

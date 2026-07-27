@@ -217,3 +217,20 @@ La revisión incluye:
 Las alternativas aparecen directamente a la derecha de la versión seleccionada,
 de modo que la comparación visual sea más intuitiva. Los detalles compactos de
 la carta aparecen justo debajo de su imagen, dentro de la columna izquierda.
+
+
+## Diseños comunitarios de MPCFill
+
+La revisión permite alternar entre impresiones oficiales de Scryfall y diseños
+comunitarios de MPCFill. Para cada diseño se muestran su fuente, idioma y DPI.
+
+Las imágenes de MPCFill pueden incluir el sangrado de impresión. La aplicación
+ofrece tres modos:
+
+- **Automático**: detecta la proporción con sangrado y lo elimina.
+- **Mantener sangrado**: conserva la imagen original.
+- **Forzar recorte MPC**: elimina siempre el margen estándar de 3,048 mm.
+
+La miniatura mostrada y el archivo final del ZIP utilizan el mismo modo de
+recorte. Si MPCFill no está disponible, Scryfall continúa funcionando con
+normalidad.

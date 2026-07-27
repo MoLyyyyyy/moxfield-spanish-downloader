@@ -46,6 +46,7 @@ def build_zip(
                 "edicion_moxfield": source.set_code or "",
                 "numero_moxfield": source.collector_number or "",
                 "estado": resolved.status,
+                "fuente": resolved.provider,
                 "idioma": resolved.language or "",
                 "nombre_impreso": resolved.printed_name or "",
                 "edicion_elegida": resolved.selected_set or "",
@@ -55,6 +56,11 @@ def build_zip(
                 "alta_resolucion": (
                     "sí" if resolved.highres_image is True
                     else "no" if resolved.highres_image is False
+                    else ""
+                ),
+                "recorte": (
+                    resolved.faces[0].crop_mode
+                    if resolved.faces and resolved.faces[0].crop_mode
                     else ""
                 ),
                 "error": resolved.error or "",

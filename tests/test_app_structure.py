@@ -49,7 +49,7 @@ def test_review_uses_fragment_navigation() -> None:
 
 def test_alternatives_are_loaded_automatically() -> None:
     app = Path("app.py").read_text(encoding="utf-8")
-    assert "Cargando impresiones alternativas..." in app
+    assert "Cargando impresiones oficiales..." in app
     assert 'alternatives_state_key not in alternatives_cache' in app
 
 
@@ -73,3 +73,23 @@ def test_details_are_below_selected_image() -> None:
     assert image_pos < details_pos < alternatives_pos
     assert "#### Detalles de la versión seleccionada" not in app
     assert "st.caption(" in app[details_pos:alternatives_pos]
+
+
+
+def test_mpcfill_selector_and_crop_controls() -> None:
+    app = Path("app.py").read_text(encoding="utf-8")
+    assert "Comunidad · MPCFill" in app
+    assert "Oficiales · Scryfall" in app
+    assert "MpcFillClient" in app
+    assert "Automático · recomendado" in app
+    assert "Mantener sangrado" in app
+    assert "Forzar recorte MPC" in app
+    assert "DPI mínimo" in app
+    assert "Fuente de versiones" in app
+
+
+def test_selected_mpcfill_preview_is_cropped() -> None:
+    app = Path("app.py").read_text(encoding="utf-8")
+    assert 'selected.provider == "mpcfill"' in app
+    assert "mpc_client.preview_bytes(" in app
+    assert "Diseño MPCFill seleccionado" in app

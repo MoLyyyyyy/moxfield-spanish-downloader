@@ -18,12 +18,15 @@ class ImageFace:
     label: str
     url: str
     extension: str
+    provider: str = "scryfall"
+    crop_mode: str | None = None
 
 
 @dataclass(slots=True)
 class ResolvedCard:
     source: DeckCard
     status: str
+    provider: str = "scryfall"
     language: str | None = None
     printed_name: str | None = None
     selected_set: str | None = None
