@@ -180,6 +180,7 @@ class ScryfallClient:
             return ResolvedCard(
                 source=card,
                 status="Sin imagen",
+                type_line=selected.get("type_line"),
                 language=selected.get("lang"),
                 printed_name=selected.get("printed_name") or selected.get("name"),
                 selected_set=selected.get("set"),
@@ -196,6 +197,7 @@ class ScryfallClient:
         return ResolvedCard(
             source=card,
             status=status,
+            type_line=selected.get("type_line"),
             language=selected.get("lang"),
             printed_name=selected.get("printed_name") or selected.get("name"),
             selected_set=selected.get("set"),

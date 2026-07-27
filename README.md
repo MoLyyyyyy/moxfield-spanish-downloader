@@ -234,3 +234,23 @@ ofrece tres modos:
 La miniatura mostrada y el archivo final del ZIP utilizan el mismo modo de
 recorte. Si MPCFill no está disponible, Scryfall continúa funcionando con
 normalidad.
+
+
+## Vista visual del mazo
+
+Después del análisis se muestra una vista visual agrupada en Comandante,
+Criaturas, Planeswalkers, Instantáneos, Conjuros, Encantamientos, Artefactos,
+Batallas, Tierras y Otros. Las zonas especiales, como banquillo o maybeboard,
+se mantienen separadas.
+
+Cada entrada muestra:
+
+- la versión actualmente seleccionada;
+- la cantidad de copias;
+- edición, idioma y fuente;
+- un aviso cuando necesita revisión;
+- un botón **Editar** que abre directamente esa carta en el selector de
+  versiones.
+
+Las selecciones de MPCFill conservan el tipo original obtenido de Scryfall, de
+modo que cambiar el diseño no mueve la carta a otra categoría.

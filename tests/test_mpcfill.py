@@ -92,8 +92,10 @@ def test_search_and_resolve_mpcfill_design(tmp_path: Path) -> None:
         DeckCard(1, "Sol Ring"),
         designs[0],
         crop_mode="auto",
+        type_line="Artifact",
     )
     assert resolved.provider == "mpcfill"
+    assert resolved.type_line == "Artifact"
     assert resolved.status == "Diseño MPCFill"
     assert resolved.faces[0].provider == "mpcfill"
     assert resolved.faces[0].crop_mode == "auto"

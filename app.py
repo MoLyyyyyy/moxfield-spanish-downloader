@@ -10,6 +10,10 @@ import pandas as pd
 import streamlit as st
 
 from mtg_downloader.archive import build_zip
+from mtg_downloader.deck_view import (
+    gallery_printing_label,
+    group_deck,
+)
 from mtg_downloader.decklist import parse_exported_decklist
 from mtg_downloader.image_processing import (
     CROP_AUTO,
@@ -266,6 +270,124 @@ def set_review_index(index: int) -> None:
     )
 
 
+def set_workspace_mode(mode: str) -> None:
+    st.session_state["workspace_mode"] = mode
+    st.session_state["workspace_selector_version"] = (
+        st.session_state.get("workspace_selector_version", 0) + 1
+    )
+
+
+def open_card_editor(index: int) -> None:
+    set_review_index(index)
+    st.session_state["review_only_problematic"] = False
+    set_workspace_mode("Editar cartas")
+
+
+def gallery_preview(
+    card: ResolvedCard,
+    mpc_client: MpcFillClient | None,
+) -> str | bytes | None:
+    if (
+        card.provider == "mpcfill"
+        and isinstance(card.scryfall_data, dict)
+        and mpc_client is not None
+    ):
+        try:
+            return mpc_client.preview_bytes(
+                card.scryfall_data,
+                crop_mode=(
+                    card.faces[0].crop_mode
+                    if card.faces and card.faces[0].crop_mode
+                    else CROP_AUTO
+                ),
+            )
+        except MpcFillError:
+            return None
+
+    urls = preview_urls(card.scryfall_data)
+    if urls:
+        return urls[0]
+    if card.faces:
+        return card.faces[0].url
+    return None
+
+
+def render_deck_gallery() -> None:
+    resolved_cards: list[ResolvedCard] = st.session_state["resolved_cards"]
+    categories = group_deck(resolved_cards)
+    problematic_count = sum(
+        1 for card in resolved_cards if is_problematic(card)
+    )
+
+    st.subheader("2. Vista del mazo")
+    st.caption(
+        "Previsualización de las versiones seleccionadas agrupada por tipo. "
+        "Cada entrada aparece una sola vez con su cantidad, igual que en un "
+        "constructor de mazos."
+    )
+
+    metric1, metric2, metric3 = st.columns(3)
+    metric1.metric(
+        "Cartas",
+        sum(card.source.quantity for card in resolved_cards),
+    )
+    metric2.metric("Entradas", len(resolved_cards))
+    metric3.metric("Pendientes de revisión", problematic_count)
+
+    mpc_client: MpcFillClient | None = None
+    if any(card.provider == "mpcfill" for card in resolved_cards):
+        mpc_client = MpcFillClient(mpc_cache_dir())
+
+    try:
+        for category in categories:
+            st.markdown(
+                f"### {category.label} "
+                f"<small>({category.quantity})</small>",
+                unsafe_allow_html=True,
+            )
+
+            category_cards = list(category.cards)
+            for row_start in range(0, len(category_cards), 6):
+                columns = st.columns(6)
+                row = category_cards[row_start : row_start + 6]
+
+                for column, (index, card) in zip(columns, row):
+                    with column:
+                        with st.container(border=True):
+                            preview = gallery_preview(card, mpc_client)
+                            if preview is not None:
+                                left_space, image_column, right_space = (
+                                    st.columns([1, 4, 1])
+                                )
+                                with image_column:
+                                    st.image(preview, width=105)
+                            else:
+                                st.caption("🖼️ Sin imagen disponible")
+
+                            warning_prefix = (
+                                "⚠️ " if is_problematic(card) else ""
+                            )
+                            st.markdown(
+                                f"**{warning_prefix}"
+                                f"{card.source.quantity}× "
+                                f"{card.source.name}**"
+                            )
+                            st.caption(gallery_printing_label(card))
+
+                            if st.button(
+                                "✏️ Editar",
+                                key=f"gallery_edit_{index}",
+                                use_container_width=True,
+                            ):
+                                open_card_editor(index)
+                                st.rerun(scope="fragment")
+
+            st.divider()
+    finally:
+        if mpc_client is not None:
+            mpc_client.close()
+
+
 st.subheader("1. Analizar")
 
 if st.button("Analizar mazo", type="primary", use_container_width=True):
@@ -300,6 +422,8 @@ if st.button("Analizar mazo", type="primary", use_container_width=True):
         st.session_state["mpc_alternatives"] = {}
         st.session_state["review_selected_index"] = 0
         st.session_state["review_selector_version"] = 0
+        st.session_state["workspace_mode"] = "Vista del mazo"
+        st.session_state["workspace_selector_version"] = 0
         st.session_state.pop("review_only_problematic", None)
         st.session_state.pop("review_flash_message", None)
         progress.progress(1.0)
@@ -326,7 +450,6 @@ if analysis_ready and not signature_matches:
         "Pulsa **Analizar mazo** de nuevo antes de revisar o generar el ZIP."
     )
 
-@st.fragment
 def render_review_panel() -> None:
     resolved_cards: list[ResolvedCard] = st.session_state["resolved_cards"]
     review_rows = [
@@ -339,7 +462,17 @@ def render_review_panel() -> None:
         if is_problematic(card)
     ]
 
-    st.subheader("2. Revisar impresiones")
+    back_col, title_col = st.columns([1, 4])
+    with back_col:
+        if st.button(
+            "← Volver al mazo",
+            use_container_width=True,
+            key="back_to_deck_gallery",
+        ):
+            set_workspace_mode("Vista del mazo")
+            st.rerun(scope="fragment")
+    with title_col:
+        st.subheader("3. Editar versiones")
     st.caption(
         "Esta zona se actualiza de forma independiente. Se consideran "
         "problemáticas las cartas sin imagen, low-res o que cambiaron de "
@@ -808,6 +941,7 @@ def render_review_panel() -> None:
                                                 selected.source,
                                                 candidate,
                                                 crop_mode=crop_mode,
+                                                type_line=selected.type_line,
                                             )
                                         )
 
@@ -841,10 +975,36 @@ def render_review_panel() -> None:
                     "sin que este error afecte al resto del mazo."
                 )
 
-if signature_matches:
-    render_review_panel()
+@st.fragment
+def render_deck_workspace() -> None:
+    options = ["Vista del mazo", "Editar cartas"]
+    current_mode = st.session_state.get("workspace_mode", options[0])
+    if current_mode not in options:
+        current_mode = options[0]
 
-    st.subheader("3. Generar ZIP")
+    selector_version = st.session_state.get(
+        "workspace_selector_version",
+        0,
+    )
+    mode = st.radio(
+        "Modo de trabajo",
+        options,
+        index=options.index(current_mode),
+        horizontal=True,
+        key=f"workspace_selector_{selector_version}",
+    )
+    st.session_state["workspace_mode"] = mode
+
+    if mode == "Vista del mazo":
+        render_deck_gallery()
+    else:
+        render_review_panel()
+
+
+if signature_matches:
+    render_deck_workspace()
+
+    st.subheader("4. Generar ZIP")
     st.caption(
         "Se utilizarán las selecciones automáticas y manuales guardadas "
         "durante la revisión."

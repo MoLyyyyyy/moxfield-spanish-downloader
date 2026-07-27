@@ -12,7 +12,7 @@ def test_app_has_no_file_uploader() -> None:
 def test_app_has_visual_review_flow() -> None:
     app = Path("app.py").read_text(encoding="utf-8")
     assert "Analizar mazo" in app
-    assert "Revisar impresiones" in app
+    assert "Editar versiones" in app
     assert "Elegir y continuar" in app
     assert "Generar ZIP con la selección actual" in app
 
@@ -93,3 +93,29 @@ def test_selected_mpcfill_preview_is_cropped() -> None:
     assert 'selected.provider == "mpcfill"' in app
     assert "mpc_client.preview_bytes(" in app
     assert "Diseño MPCFill seleccionado" in app
+
+
+
+def test_moxfield_style_deck_gallery() -> None:
+    app = Path("app.py").read_text(encoding="utf-8")
+    assert "def render_deck_gallery()" in app
+    assert "Vista del mazo" in app
+    assert "Editar cartas" in app
+    assert "group_deck(" in app
+    assert "gallery_printing_label(" in app
+    assert '"✏️ Editar"' in app
+    assert "st.columns(6)" in app
+
+
+def test_gallery_edit_opens_selected_card() -> None:
+    app = Path("app.py").read_text(encoding="utf-8")
+    assert "def open_card_editor(index: int)" in app
+    assert 'st.session_state["review_only_problematic"] = False' in app
+    assert 'set_workspace_mode("Editar cartas")' in app
+    assert "← Volver al mazo" in app
+
+
+def test_workspace_owns_the_fragment() -> None:
+    app = Path("app.py").read_text(encoding="utf-8")
+    assert "@st.fragment\ndef render_deck_workspace()" in app
+    assert "@st.fragment\ndef render_review_panel()" not in app

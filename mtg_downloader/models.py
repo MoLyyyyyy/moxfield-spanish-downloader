@@ -27,6 +27,7 @@ class ResolvedCard:
     source: DeckCard
     status: str
     provider: str = "scryfall"
+    type_line: str | None = None
     language: str | None = None
     printed_name: str | None = None
     selected_set: str | None = None

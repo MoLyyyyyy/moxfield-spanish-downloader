@@ -142,6 +142,7 @@ class MpcFillClient:
         candidate: dict[str, Any],
         *,
         crop_mode: str = CROP_AUTO,
+        type_line: str | None = None,
     ) -> ResolvedCard:
         download_url = candidate.get("download_url")
         if not isinstance(download_url, str) or not download_url:
@@ -149,6 +150,7 @@ class MpcFillClient:
                 source=card,
                 status="Sin imagen",
                 provider="mpcfill",
+                type_line=type_line,
                 error="MPCFill no ofrece un enlace de descarga para este diseño.",
             )
 
@@ -163,6 +165,7 @@ class MpcFillClient:
             source=card,
             status="Diseño MPCFill",
             provider="mpcfill",
+            type_line=type_line,
             language=str(candidate.get("language") or "").lower() or None,
             printed_name=str(candidate.get("name") or card.name),
             selected_set="MPCFILL",
