@@ -59,6 +59,17 @@ def test_review_layout_places_alternatives_next_to_selected_card() -> None:
     assert "top_left, top_right = st.columns([1, 2])" in app
     assert "#### Versión seleccionada" in app
     assert "#### Otras versiones" in app
-    assert "#### Detalles de la versión seleccionada" in app
+    assert "##### Detalles" in app
     assert "Selector rápido de alternativas" not in app
     assert "Usar alternativa seleccionada y continuar" not in app
+
+
+
+def test_details_are_below_selected_image() -> None:
+    app = Path("app.py").read_text(encoding="utf-8")
+    image_pos = app.index('st.image(url, caption=caption, width=210)')
+    details_pos = app.index('st.markdown("##### Detalles")')
+    alternatives_pos = app.index('with top_right:')
+    assert image_pos < details_pos < alternatives_pos
+    assert "#### Detalles de la versión seleccionada" not in app
+    assert "st.caption(" in app[details_pos:alternatives_pos]

@@ -215,5 +215,5 @@ La revisión incluye:
 ### Disposición de la revisión
 
 Las alternativas aparecen directamente a la derecha de la versión seleccionada,
-de modo que la comparación visual sea más intuitiva. Los detalles de la carta
-seleccionada se muestran debajo para dejar más espacio útil a las miniaturas.
+de modo que la comparación visual sea más intuitiva. Los detalles compactos de
+la carta aparecen justo debajo de su imagen, dentro de la columna izquierda.

@@ -457,6 +457,25 @@ def render_review_panel() -> None:
         else:
             st.warning("La selección actual no tiene imagen.")
 
+        st.markdown("##### Detalles")
+        st.caption(
+            f"**Carta:** {selected.source.name}  \n"
+            f"**Cantidad:** {selected.source.quantity}  \n"
+            f"**Solicitada:** "
+            f"{(selected.source.set_code or '?').upper()} "
+            f"{selected.source.collector_number or '?'}  \n"
+            f"**Elegida:** {(selected.selected_set or '?').upper()} "
+            f"{selected.collector_number or '?'}  \n"
+            f"**Idioma:** {(selected.language or '?').upper()}  \n"
+            f"**Calidad:** {selected.image_status or 'desconocida'}  \n"
+            f"**Estado:** {selected.status}"
+        )
+        reasons = problem_reasons(selected)
+        if reasons:
+            st.warning("Revisar: " + ", ".join(reasons))
+        else:
+            st.success("Selección correcta.")
+
     with top_right:
         st.markdown("#### Otras versiones")
         st.caption(
@@ -583,25 +602,6 @@ def render_review_panel() -> None:
                 "Prueba a incluir inglés o permitir imágenes que no estén "
                 "marcadas como alta resolución."
             )
-
-    st.markdown("#### Detalles de la versión seleccionada")
-    st.write(
-        f"**Carta:** {selected.source.name}  \n"
-        f"**Cantidad:** {selected.source.quantity}  \n"
-        f"**Solicitada:** "
-        f"{(selected.source.set_code or '?').upper()} "
-        f"{selected.source.collector_number or '?'}  \n"
-        f"**Elegida:** {(selected.selected_set or '?').upper()} "
-        f"{selected.collector_number or '?'}  \n"
-        f"**Idioma:** {(selected.language or '?').upper()}  \n"
-        f"**Calidad:** {selected.image_status or 'desconocida'}  \n"
-        f"**Estado:** {selected.status}"
-    )
-    reasons = problem_reasons(selected)
-    if reasons:
-        st.warning("Motivos de revisión: " + ", ".join(reasons))
-    else:
-        st.success("La selección automática no presenta incidencias.")
 
 
 if signature_matches:
