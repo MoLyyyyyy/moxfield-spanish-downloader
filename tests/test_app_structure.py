@@ -13,8 +13,9 @@ def test_app_has_visual_review_flow() -> None:
     app = Path("app.py").read_text(encoding="utf-8")
     assert "Analizar mazo" in app
     assert "Revisar impresiones" in app
-    assert "Buscar impresiones alternativas" in app
     assert "Elegir y continuar" in app
+    assert "Selector rápido de alternativas" in app
+    assert "Usar alternativa seleccionada y continuar" in app
     assert "Generar ZIP con la selección actual" in app
 
 
@@ -33,6 +34,8 @@ def test_app_advances_to_next_card_after_manual_choice() -> None:
     assert "set_review_index(target_index)" in app
     assert "next_review_index(" in app
     assert "Elegir y continuar" in app
+    assert "Selector rápido de alternativas" in app
+    assert "Usar alternativa seleccionada y continuar" in app
 
 
 def test_review_uses_fragment_navigation() -> None:
@@ -41,8 +44,19 @@ def test_review_uses_fragment_navigation() -> None:
     assert 'st.rerun(scope="fragment")' in app
     assert "Mantener actual y continuar" in app
     assert "Elegir y continuar" in app
+    assert "Selector rápido de alternativas" in app
+    assert "Usar alternativa seleccionada y continuar" in app
     assert "← Anterior" in app
     assert "Siguiente →" in app
     assert "def previous_review_index(" in app
     assert "def set_review_index(" in app
     assert "st.rerun()" not in app
+
+
+
+def test_alternatives_are_loaded_automatically() -> None:
+    app = Path("app.py").read_text(encoding="utf-8")
+    assert "Cargando impresiones alternativas..." in app
+    assert "Buscar impresiones alternativas" not in app
+    assert 'alternatives_state_key not in alternatives_cache' in app
+    assert "Selector rápido de alternativas" in app

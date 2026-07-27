@@ -186,9 +186,9 @@ El proceso se divide en tres fases:
 1. **Analizar mazo**: la aplicación selecciona automáticamente una impresión
    para cada carta.
 2. **Revisar impresiones**: se muestra una tabla y un panel de previsualización.
-   Puedes filtrar las cartas problemáticas, buscar hasta 18 alternativas y
-   elegir manualmente otra edición, idioma o ilustración. Una carta en inglés
-   no se considera problemática por sí sola.
+   Puedes filtrar las cartas problemáticas y la aplicación cargará automáticamente
+   hasta 18 alternativas. Puedes elegir manualmente otra edición, idioma o
+   ilustración. Una carta en inglés no se considera problemática por sí sola.
 3. **Generar ZIP**: se descargan las selecciones definitivas respetando todas
    las cantidades.
 
@@ -210,3 +210,9 @@ La revisión incluye:
 - botón **Mantener actual y continuar**;
 - selección manual mediante **Elegir y continuar**;
 - avance automático a la carta siguiente después de guardar una versión.
+
+### Selector rápido de alternativas
+
+En la revisión de cada carta, las alternativas se cargan automáticamente.
+Además de la galería de miniaturas, hay un selector rápido con vista previa
+para aplicar una versión de forma más cómoda sin tener que recorrer toda la cuadrícula.
