@@ -4,6 +4,7 @@ from mtg_downloader.models import DeckCard
 from mtg_downloader.mpcfill import (
     DEFAULT_PREFERRED_SOURCES,
     MpcFillClient,
+    mpc_candidate_mentions_set_code,
 )
 
 
@@ -181,3 +182,60 @@ def test_current_editor_search_api_and_source_order() -> None:
 def test_new_preferred_sources_are_registered() -> None:
     assert "CompC" in DEFAULT_PREFERRED_SOURCES
     assert "Hathwellcrisping" in DEFAULT_PREFERRED_SOURCES
+
+
+
+def test_set_code_is_detected_in_candidate_name_or_url() -> None:
+    candidate = design(
+        "hob-1",
+        "PsilosX",
+        dpi=800,
+    )
+    candidate["name"] = "Beorn the Fierce (HOB)"
+    candidate["download_url"] = "https://example.com/Beorn_HOB_119.jpg"
+    assert mpc_candidate_mentions_set_code(candidate, "hob")
+
+
+def test_auto_selection_prefers_same_set_code() -> None:
+    class SetCodeClient(MpcFillClient):
+        def __init__(self):
+            super().__init__(Path("/tmp/proxy_maker_set_code_test"))
+
+        def _search_identifiers(self, *args, **kwargs):
+            return ["a", "b"]
+
+        def _get_cards(self, identifiers):
+            cards = {
+                "a": {
+                    **design("a", "MrTeferi", dpi=1000),
+                    "name": "Random Artist Version",
+                    "download_url": "https://example.com/random.jpg",
+                },
+                "b": {
+                    **design("b", "OtherArtist", dpi=700),
+                    "name": "Lightning Bolt (HOB)",
+                    "download_url": "https://example.com/bolt_hob.jpg",
+                },
+            }
+            return [cards[value] for value in identifiers]
+
+    client = SetCodeClient()
+    try:
+        result = client.resolve_auto(
+            DeckCard(
+                1,
+                "Lightning Bolt",
+                set_code="hob",
+                collector_number="119",
+            ),
+            preferred_language="en",
+            allow_language_fallback=False,
+            resolution_mode="flexible",
+            quality_mode="prefer_highres",
+            preferred_sources=DEFAULT_PREFERRED_SOURCES,
+        )
+    finally:
+        client.close()
+
+    assert result.faces
+    assert result.faces[0].url.endswith("bolt_hob.jpg")

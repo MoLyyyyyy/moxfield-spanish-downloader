@@ -417,3 +417,35 @@ coincidencias y las imágenes finalmente seleccionadas.
 
 Los errores HTTP del servicio se muestran como errores de MPCFill y no se
 confunden con cartas sin diseños.
+
+
+### Coincidencia por set code en MPCFill
+
+Cuando se usa MPCFill, Proxy Maker ahora favorece los diseños cuyo nombre,
+archivo o URL parece incluir el **set code** de la carta (por ejemplo `HOB`).
+
+- En **Usar únicamente la edición indicada**, ese indicio pasa a ser un
+  requisito adicional durante la selección automática.
+- En **Respetar la edición indicada primero** y **Buscar en cualquier edición**,
+  los diseños del mismo set aparecen antes que el resto, tanto en la selección
+  automática como en la búsqueda manual de alternativas.
+
+
+### Nombre del PDF
+
+El PDF generado utiliza automáticamente el nombre de la primera carta de la
+lista, que normalmente es el comandante. Los caracteres incompatibles con
+nombres de archivo se limpian automáticamente. Por ejemplo:
+
+- `Beorn the Fierce` → `Beorn the Fierce.pdf`
+- `Fire // Ice` → `Fire - Ice.pdf`
+
+
+### Generación y descarga directa del PDF
+
+El botón principal del paso 3 es **Generar PDF y descargar**. La generación se
+ejecuta de forma diferida al pulsarlo y, cuando termina, el navegador inicia la
+descarga directamente. No se muestra un segundo botón ni se genera el PDF al
+entrar en la pantalla.
+
+Esta función requiere Streamlit 1.54 o posterior.

@@ -82,14 +82,14 @@ def test_gallery_filters_and_statuses_exist() -> None:
     assert "Múltiples artes" in app
     assert "Baja resolución" in app
     assert "Preparar todas las imágenes ahora" not in app
-    assert "se descargan automáticamente al generar" in app
+    assert "comienza la descarga automáticamente" in app
     assert "cache_stats(" in app
 
 
 def test_validation_and_simplified_export_actions_exist() -> None:
     app = app_text()
     assert "Validar y exportar" in app
-    assert "Generar PDF A4" in app
+    assert "Generar PDF y descargar" in app
     assert "Otros formatos" in app
     assert "Generar ZIP de imágenes" in app
     assert "Generar paquete MPC / dúplex" in app
@@ -128,15 +128,13 @@ def test_exact_mpcfilltopdf_assets_are_mandatory() -> None:
 
 
 
-def test_pdf_shows_live_progress() -> None:
+def test_pdf_uses_deferred_generation_in_one_click() -> None:
     app = app_text()
-    assert "update_pdf_progress" in app
-    assert "Preparando frente" in app
-    assert "Preparando reverso" in app
-    assert "Montando página" in app
-    assert "Finalizando y comprimiendo el PDF" in app
-    assert "progress_callback=update_pdf_progress" in app
-    assert "time.monotonic()" in app
+    assert "def generate_pdf_download() -> bytes:" in app
+    assert "data=generate_pdf_download" in app
+    assert 'on_click="ignore"' in app
+    assert "update_pdf_progress" not in app
+    assert "progress_callback=update_pdf_progress" not in app
 
 
 
@@ -208,7 +206,7 @@ def test_magic_back_is_always_used_without_selector() -> None:
 
 def test_pdf_is_the_primary_export_action() -> None:
     app = app_text()
-    assert '"Generar PDF A4"' in app
+    assert '"Generar PDF y descargar"' in app
     assert 'type="primary"' in app
     assert 'with st.expander("Otros formatos"' in app
     assert 'export_format = st.selectbox(' not in app
@@ -316,3 +314,35 @@ def test_analysis_engine_version_invalidates_stale_results() -> None:
     app = app_text()
     assert 'ANALYSIS_ENGINE_VERSION = "mpcfill-batch-v1"' in app
     assert '"engine_version": ANALYSIS_ENGINE_VERSION' in app
+
+
+
+def test_manual_mpcfill_results_prioritize_same_set_code() -> None:
+    app = app_text()
+    assert "mpc_candidate_mentions_set_code" in app
+    assert "Se muestran primero los diseños cuyo nombre o " in app
+    assert "archivo parece incluir el set code " in app
+
+
+
+def test_pdf_uses_first_card_filename() -> None:
+    app = app_text()
+    assert "from mtg_downloader.filenames import commander_pdf_filename" in app
+    assert "pdf_file_name = commander_pdf_filename(cards)" in app
+    assert "mazo_impresion_mpcfilltopdf.pdf" not in app
+
+
+
+def test_pdf_is_generated_by_deferred_download_button() -> None:
+    app = app_text()
+    assert "def generate_pdf_download() -> bytes:" in app
+    assert '"Generar PDF y descargar"' in app
+    assert "data=generate_pdf_download" in app
+    assert "file_name=pdf_file_name" in app
+    assert 'pdf_image_quality = st.session_state["analysis_image_quality"]' in app
+    assert "image_quality=pdf_image_quality" in app
+    assert 'mime="application/pdf"' in app
+    assert 'on_click="ignore"' in app
+    assert "pdf_requested" not in app
+    assert 'requested_format = "pdf"' not in app
+    assert '"Descargar ZIP preparado"' in app

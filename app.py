@@ -20,6 +20,7 @@ from mtg_downloader.deck_view import (
     group_deck,
 )
 from mtg_downloader.decklist import parse_exported_decklist
+from mtg_downloader.filenames import commander_pdf_filename
 from mtg_downloader.image_processing import CROP_AUTO, CROP_FORCE, CROP_NONE
 from mtg_downloader.models import CardVariant, DeckCard, ImageFace, ResolvedCard
 from mtg_downloader.mpcfill import (
@@ -28,8 +29,9 @@ from mtg_downloader.mpcfill import (
     MpcFillError,
     mpc_candidate_key,
     mpc_candidate_label,
+    mpc_candidate_mentions_set_code,
 )
-from mtg_downloader.pdf_export import PdfProgress, build_a4_pdf
+from mtg_downloader.pdf_export import build_a4_pdf
 from mtg_downloader.profile_resolution import resolve_with_language_fallback
 from mtg_downloader.review import (
     candidate_key,
@@ -1468,9 +1470,28 @@ def render_review_panel() -> None:
                                 fuzzy_search=True,
                             )
                     designs = cache.get(cache_key, [])
+                    if selected.source.set_code:
+                        designs = sorted(
+                            designs,
+                            key=lambda candidate: (
+                                0
+                                if mpc_candidate_mentions_set_code(
+                                    candidate,
+                                    selected.source.set_code,
+                                )
+                                else 1,
+                                -int(candidate.get("dpi") or 0),
+                            ),
+                        )
                     if not designs:
                         st.info(
                             "MPCFill no encontró diseños con esos filtros."
+                        )
+                    elif selected.source.set_code:
+                        st.caption(
+                            "Se muestran primero los diseños cuyo nombre o "
+                            "archivo parece incluir el set code "
+                            f"\"{selected.source.set_code.upper()}\"."
                         )
                     columns = st.columns(3)
                     for design_index, candidate in enumerate(designs):
@@ -1637,15 +1658,47 @@ def render_export_panel() -> None:
             ),
         )
 
-    pdf_requested = st.button(
-        "Generar PDF A4",
+    pdf_file_name = commander_pdf_filename(cards)
+    pdf_image_quality = st.session_state["analysis_image_quality"]
+
+    def generate_pdf_download() -> bytes:
+        with ScryfallClient(
+            cache_dir(),
+            image_quality=pdf_image_quality,
+        ) as client:
+            result = build_a4_pdf(
+                cards,
+                client,
+                back_spec=back_spec,
+                include_backs=include_backs,
+                cut_lines=cut_lines,
+                cut_line_style=cut_line_style,
+                cut_line_width=cut_line_width,
+                cut_line_color=cut_line_color,
+                cut_line_over_cards=cut_line_over_cards,
+                printer_marks=printer_marks,
+            )
+        return result.data
+
+    st.download_button(
+        "Generar PDF y descargar",
+        data=generate_pdf_download,
+        file_name=pdf_file_name,
+        mime="application/pdf",
         type="primary",
         use_container_width=True,
         disabled=generation_disabled,
+        on_click="ignore",
+        help=(
+            "El PDF se genera al pulsar el botón y la descarga comienza "
+            "automáticamente cuando termina."
+        ),
     )
     st.caption(
-        "Las imágenes necesarias se descargan automáticamente al generar."
+        "Un solo clic: genera el PDF, descarga las imágenes necesarias "
+        "y comienza la descarga automáticamente."
     )
+
 
     images_requested = False
     mpc_requested = False
@@ -1670,9 +1723,7 @@ def render_export_panel() -> None:
             )
 
     requested_format: str | None = None
-    if pdf_requested:
-        requested_format = "pdf"
-    elif images_requested:
+    if images_requested:
         requested_format = "images"
     elif mpc_requested:
         requested_format = "mpc"
@@ -1685,101 +1736,33 @@ def render_export_panel() -> None:
                 cache_dir(),
                 image_quality=st.session_state["analysis_image_quality"],
             ) as client:
-                if requested_format == "pdf":
-                    started_at = time.monotonic()
-
-                    def update_pdf_progress(event: PdfProgress) -> None:
-                        elapsed = int(time.monotonic() - started_at)
-                        progress.progress(
-                            min(event.current / max(event.total, 1), 1.0)
-                        )
-                        elapsed_text = f"{elapsed // 60}:{elapsed % 60:02d}"
-
-                        if event.phase == "front":
-                            status.write(
-                                f"Preparando frente "
-                                f"{event.phase_current}/{event.phase_total} "
-                                f"· página {event.page_label} "
-                                f"· **{event.label}** "
-                                f"· {elapsed_text}"
-                            )
-                        elif event.phase == "back":
-                            status.write(
-                                f"Preparando reverso "
-                                f"{event.phase_current}/{event.phase_total} "
-                                f"· página {event.page_label} "
-                                f"· **{event.label}** "
-                                f"· {elapsed_text}"
-                            )
-                        elif event.phase == "common_back":
-                            status.write(
-                                f"Preparando reverso común: "
-                                f"**{event.label}** · {elapsed_text}"
-                            )
-                        elif event.phase == "page":
-                            status.write(
-                                f"Montando página "
-                                f"{event.phase_current}/{event.phase_total}: "
-                                f"**{event.label}** · {elapsed_text}"
-                            )
-                        elif event.phase == "finalizing":
-                            status.write(
-                                f"Finalizando y comprimiendo el PDF "
-                                f"· {elapsed_text}"
-                            )
-
-                    status.write("Iniciando generación del PDF...")
-                    result = build_a4_pdf(
-                        cards,
-                        client,
-                        back_spec=back_spec,
-                        include_backs=include_backs,
-                        cut_lines=cut_lines,
-                        cut_line_style=cut_line_style,
-                        cut_line_width=cut_line_width,
-                        cut_line_color=cut_line_color,
-                        cut_line_over_cards=cut_line_over_cards,
-                        printer_marks=printer_marks,
-                        progress_callback=update_pdf_progress,
-                    )
-                    data = result.data
-                    name = "mazo_impresion_mpcfilltopdf.pdf"
-                    mime = "application/pdf"
-                    report = []
-                    progress.progress(1.0)
-                    status.success(
-                        f"PDF preparado: {result.pages} páginas, "
-                        f"{result.page_pairs} parejas y "
-                        f"{result.cards} cartas."
-                    )
-                else:
-                    data, report = build_zip(
-                        cards,
-                        client,
-                        duplicate_copies=True,
-                        progress_callback=lambda current, total, name: (
-                            status.write(
-                                f"Añadiendo {current}/{total}: **{name}**"
-                            ),
-                            progress.progress(current / max(total, 1)),
+                data, report = build_zip(
+                    cards,
+                    client,
+                    duplicate_copies=True,
+                    progress_callback=lambda current, total, name: (
+                        status.write(
+                            f"Añadiendo {current}/{total}: **{name}**"
                         ),
-                        back_spec=back_spec,
-                        include_backs=include_backs,
-                        naming_mode=(
-                            "category"
-                            if naming_mode == "Por categoría"
-                            else "sequence"
-                        ),
-                        package_mode=requested_format,
-                    )
-                    name = (
-                        "mazo_paquete_mpc.zip"
-                        if requested_format == "mpc"
-                        else "mazo_cartas.zip"
-                    )
-                    mime = "application/zip"
-                    progress.progress(1.0)
-                    status.success("Paquete preparado correctamente.")
+                        progress.progress(current / max(total, 1)),
+                    ),
+                    back_spec=back_spec,
+                    include_backs=include_backs,
+                    naming_mode=(
+                        "category"
+                        if naming_mode == "Por categoría"
+                        else "sequence"
+                    ),
+                    package_mode=requested_format,
+                )
+                name = (
+                    "mazo_paquete_mpc.zip"
+                    if requested_format == "mpc"
+                    else "mazo_cartas.zip"
+                )
+                mime = "application/zip"
+                progress.progress(1.0)
+                status.success("Paquete preparado correctamente.")
 
             st.session_state["output_data"] = data
             st.session_state["output_name"] = name
@@ -1788,9 +1771,10 @@ def render_export_panel() -> None:
         except (ScryfallError, OSError, ValueError) as exc:
             status.error(str(exc))
 
+
     if st.session_state.get("output_data") is not None:
         st.download_button(
-            "Descargar resultado",
+            "Descargar ZIP preparado",
             data=st.session_state["output_data"],
             file_name=st.session_state["output_name"],
             mime=st.session_state["output_mime"],

@@ -241,7 +241,21 @@ class MpcFillClient:
                         if not designs:
                             continue
 
-                        candidate = designs[0]
+                        candidate = _select_auto_candidate(
+                            designs,
+                            preferred_language=preferred_language,
+                            allowed_languages=tuple(languages_to_try),
+                            quality_mode=quality_mode,
+                            preferred_sources=preferred_sources,
+                            preferred_set_code=card.set_code,
+                            require_set_code=(
+                                expansion_code is not None
+                                and collector_number is not None
+                            ),
+                        )
+                        if candidate is None:
+                            continue
+
                         result = self.resolve_candidate(
                             card,
                             candidate,
@@ -1159,6 +1173,8 @@ def _select_auto_candidate(
     allowed_languages: tuple[str, ...],
     quality_mode: str,
     preferred_sources: tuple[str, ...],
+    preferred_set_code: str | None = None,
+    require_set_code: bool = False,
 ) -> dict[str, Any] | None:
     allowed = {language.lower() for language in allowed_languages}
     valid: list[dict[str, Any]] = []
@@ -1177,6 +1193,11 @@ def _select_auto_candidate(
             continue
         if quality_mode != "highres_only" and dpi < 300:
             continue
+        if require_set_code and not mpc_candidate_mentions_set_code(
+            candidate,
+            preferred_set_code,
+        ):
+            continue
         valid.append(candidate)
 
     if not valid:
@@ -1191,8 +1212,17 @@ def _select_auto_candidate(
             if quality_mode != "prefer_highres" or dpi >= 600
             else 1
         )
+        set_code_rank = (
+            0
+            if mpc_candidate_mentions_set_code(
+                candidate,
+                preferred_set_code,
+            )
+            else 1
+        )
         return (
             language_rank,
+            set_code_rank,
             quality_rank,
             _preferred_source_rank(candidate, preferred_sources),
             -dpi,
@@ -1202,6 +1232,59 @@ def _select_auto_candidate(
 
     return min(valid, key=rank)
 
+
+
+
+def mpc_candidate_mentions_set_code(
+    candidate: dict[str, Any],
+    set_code: str | None,
+) -> bool:
+    if not set_code:
+        return False
+
+    normalised_target = _normalise_source_name(set_code)
+    if not normalised_target:
+        return False
+
+    fields = [
+        candidate.get("name"),
+        candidate.get("displayName"),
+        candidate.get("sourceName"),
+        candidate.get("sourceVerbose"),
+        candidate.get("source"),
+        candidate.get("identifier"),
+        candidate.get("fileName"),
+        candidate.get("filename"),
+        candidate.get("downloadLink"),
+        candidate.get("download_url"),
+        candidate.get("smallThumbnailUrl"),
+        candidate.get("mediumThumbnailUrl"),
+    ]
+    for value in fields:
+        raw = str(value or "").strip()
+        if not raw:
+            continue
+
+        tokens = [
+            _normalise_source_name(token)
+            for token in re.split(r"[^A-Za-z0-9]+", raw)
+            if token
+        ]
+        if normalised_target in tokens:
+            return True
+
+        compact = _normalise_source_name(raw)
+        for wrapped in (
+            f"({normalised_target})",
+            f"[{normalised_target}]",
+            f"_{normalised_target}_",
+            f"-{normalised_target}-",
+            f" {normalised_target} ",
+        ):
+            if wrapped.strip() and wrapped.strip() in compact:
+                return True
+
+    return False
 
 def _download_url(candidate: dict[str, Any]) -> str | None:
     for key in ("downloadLink", "download_url"):
