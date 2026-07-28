@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import string
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
@@ -24,7 +26,14 @@ DEFAULT_PREFERRED_SOURCES = (
 
 
 class MpcFillError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class MpcFillClient:
@@ -43,6 +52,7 @@ class MpcFillClient:
         self.image_cache.mkdir(parents=True, exist_ok=True)
         self.preview_cache.mkdir(parents=True, exist_ok=True)
         self.base_url = base_url.rstrip("/") + "/"
+        self.last_batch_stats: dict[str, int] = {}
         self._owns_client = client is None
         self.client = client or httpx.Client(
             timeout=50.0,
@@ -282,6 +292,350 @@ class MpcFillClient:
                 "calidad solicitados."
             ),
         )
+
+    def resolve_many_auto(
+        self,
+        cards: list[DeckCard],
+        *,
+        preferred_language: str = "es",
+        allow_language_fallback: bool = True,
+        resolution_mode: str = "exact_first",
+        quality_mode: str = "prefer_highres",
+        preferred_sources: tuple[str, ...] = DEFAULT_PREFERRED_SOURCES,
+    ) -> list[ResolvedCard]:
+        """Resolve a complete deck with a few batched MPCFill requests."""
+        if preferred_language not in {"es", "en"}:
+            preferred_language = "es"
+        if resolution_mode not in {"exact_first", "exact_only", "flexible"}:
+            resolution_mode = "exact_first"
+        if quality_mode not in {
+            "allow_lowres",
+            "prefer_highres",
+            "highres_only",
+        }:
+            quality_mode = "prefer_highres"
+
+        cards = list(cards)
+        resolved: list[ResolvedCard | None] = [None] * len(cards)
+        languages = [preferred_language]
+        if allow_language_fallback:
+            languages.append(
+                "en" if preferred_language == "es" else "es"
+            )
+
+        minimum_dpi = 800 if quality_mode == "highres_only" else 300
+        stats = {
+            "cards": len(cards),
+            "search_requests": 0,
+            "metadata_requests": 0,
+            "queries_with_hits": 0,
+            "resolved": 0,
+            "preferred_creator": 0,
+            "language_fallback": 0,
+        }
+
+        def resolve_pass(
+            indices: list[int],
+            *,
+            exact_printing: bool,
+            fuzzy_search: bool,
+            front_name_only: bool = False,
+        ) -> list[int]:
+            if not indices:
+                return []
+
+            query_documents: dict[str, dict[str, Any]] = {}
+            key_to_index: dict[str, int] = {}
+            for index in indices:
+                card = cards[index]
+                query_name = card.name
+                if front_name_only and " // " in query_name:
+                    query_name = query_name.split(" // ", 1)[0].strip()
+
+                query_document: dict[str, Any] = {
+                    "query": _normalise_query(query_name),
+                    "cardType": "CARD",
+                }
+                if exact_printing:
+                    if not (card.set_code and card.collector_number):
+                        continue
+                    query_document["expansionCode"] = card.set_code.upper()
+                    query_document["collectorNumber"] = card.collector_number
+
+                query_key = f"{index}:{_search_query_key(query_document)}"
+                query_documents[query_key] = query_document
+                key_to_index[query_key] = index
+
+            if not query_documents:
+                return indices
+
+            identifiers_by_key, request_count = (
+                self._search_many_identifiers(
+                    query_documents,
+                    languages=tuple(language.upper() for language in languages),
+                    minimum_dpi=minimum_dpi,
+                    preferred_sources=preferred_sources,
+                    fuzzy_search=fuzzy_search,
+                )
+            )
+            stats["search_requests"] += request_count
+            stats["queries_with_hits"] += sum(
+                1
+                for identifiers in identifiers_by_key.values()
+                if identifiers
+            )
+
+            identifiers: list[str] = []
+            for values in identifiers_by_key.values():
+                identifiers.extend(values[:40])
+            identifiers = list(dict.fromkeys(identifiers))
+
+            documents: dict[str, dict[str, Any]] = {}
+            for start in range(0, len(identifiers), 1000):
+                batch = identifiers[start : start + 1000]
+                if not batch:
+                    continue
+                documents.update(self._get_card_documents(batch))
+                stats["metadata_requests"] += 1
+
+            unresolved: list[int] = []
+            for query_key, index in key_to_index.items():
+                candidate_documents = [
+                    documents[identifier]
+                    for identifier in identifiers_by_key.get(query_key, [])[:40]
+                    if identifier in documents
+                ]
+                candidate = _select_auto_candidate(
+                    candidate_documents,
+                    preferred_language=preferred_language,
+                    allowed_languages=tuple(languages),
+                    quality_mode=quality_mode,
+                    preferred_sources=preferred_sources,
+                )
+                if candidate is None:
+                    unresolved.append(index)
+                    continue
+
+                result = self.resolve_candidate(
+                    cards[index],
+                    candidate,
+                    crop_mode=CROP_AUTO,
+                )
+                source_rank = _preferred_source_rank(
+                    candidate,
+                    preferred_sources,
+                )
+                candidate_language = str(
+                    candidate.get("language") or ""
+                ).lower()
+                status_parts = ["Diseño MPCFill"]
+                if source_rank < len(preferred_sources):
+                    status_parts.append("autor preferido")
+                    stats["preferred_creator"] += 1
+                if candidate_language != preferred_language:
+                    status_parts.append(
+                        "respaldo en "
+                        + (
+                            "español"
+                            if candidate_language == "es"
+                            else "inglés"
+                        )
+                    )
+                    stats["language_fallback"] += 1
+                if (
+                    quality_mode == "prefer_highres"
+                    and int(candidate.get("dpi") or 0) < 600
+                ):
+                    status_parts.append("calidad de respaldo")
+                result.status = " · ".join(status_parts)
+                resolved[index] = result
+
+            return unresolved
+
+        unresolved = list(range(len(cards)))
+
+        if resolution_mode in {"exact_first", "exact_only"}:
+            exact_indices = [
+                index
+                for index in unresolved
+                if cards[index].set_code
+                and cards[index].collector_number
+            ]
+            unresolved_after_exact = resolve_pass(
+                exact_indices,
+                exact_printing=True,
+                fuzzy_search=False,
+            )
+            exact_index_set = set(exact_indices)
+            unresolved = [
+                index
+                for index in unresolved
+                if index not in exact_index_set
+            ] + unresolved_after_exact
+
+            if resolution_mode == "exact_only":
+                for index in unresolved:
+                    resolved[index] = ResolvedCard(
+                        source=cards[index],
+                        status="Sin impresión exacta",
+                        provider="mpcfill",
+                        error=(
+                            "MPCFill no encontró la edición y número de "
+                            "coleccionista indicados."
+                        ),
+                    )
+                unresolved = []
+
+        if unresolved:
+            unresolved = resolve_pass(
+                unresolved,
+                exact_printing=False,
+                fuzzy_search=resolution_mode == "flexible",
+            )
+
+        dfc_unresolved = [
+            index
+            for index in unresolved
+            if " // " in cards[index].name
+        ]
+        if dfc_unresolved:
+            remaining_dfc = resolve_pass(
+                dfc_unresolved,
+                exact_printing=False,
+                fuzzy_search=True,
+                front_name_only=True,
+            )
+            dfc_set = set(dfc_unresolved)
+            remaining_set = set(remaining_dfc)
+            unresolved = [
+                index
+                for index in unresolved
+                if index not in dfc_set or index in remaining_set
+            ]
+
+        for index in unresolved:
+            resolved[index] = ResolvedCard(
+                source=cards[index],
+                status=(
+                    "Sin alta resolución"
+                    if quality_mode == "highres_only"
+                    else "No encontrada"
+                ),
+                provider="mpcfill",
+                error=(
+                    "MPCFill no devolvió diseños compatibles para esta "
+                    "consulta."
+                ),
+            )
+
+        final_results = [
+            item
+            if item is not None
+            else ResolvedCard(
+                source=cards[index],
+                status="No encontrada",
+                provider="mpcfill",
+                error="MPCFill no devolvió una selección.",
+            )
+            for index, item in enumerate(resolved)
+        ]
+        stats["resolved"] = sum(1 for item in final_results if item.faces)
+        self.last_batch_stats = stats
+        return final_results
+
+    def _search_many_identifiers(
+        self,
+        query_documents: dict[str, dict[str, Any]],
+        *,
+        languages: tuple[str, ...],
+        minimum_dpi: int,
+        preferred_sources: tuple[str, ...],
+        fuzzy_search: bool,
+    ) -> tuple[dict[str, list[str]], int]:
+        search_settings = {
+            "searchTypeSettings": {
+                "fuzzySearch": fuzzy_search,
+                "filterCardbacks": False,
+            },
+            "sourceSettings": {
+                "sources": self._source_rows(preferred_sources),
+            },
+            "filterSettings": {
+                "minimumDPI": minimum_dpi,
+                "maximumDPI": 1500,
+                "maximumSize": 30,
+                "languages": list(languages),
+                "includesTags": [],
+                "excludesTags": ["NSFW"],
+            },
+        }
+
+        results: dict[str, list[str]] = {}
+        request_count = 0
+        items = list(query_documents.items())
+        for start in range(0, len(items), 300):
+            chunk = dict(items[start : start + 300])
+            payload = {
+                "searchSettings": search_settings,
+                "queries": chunk,
+            }
+            try:
+                response = self._request_json(
+                    "3/editorSearch/",
+                    method="POST",
+                    payload=payload,
+                )
+                request_count += 1
+                raw_results = response.get("results")
+                if not isinstance(raw_results, dict):
+                    raise MpcFillError(
+                        "MPCFill no devolvió resultados de búsqueda."
+                    )
+                for key in chunk:
+                    identifiers = raw_results.get(key, [])
+                    results[key] = (
+                        [str(value) for value in identifiers]
+                        if isinstance(identifiers, list)
+                        else []
+                    )
+            except MpcFillError as exc:
+                if exc.status_code != 404:
+                    raise
+
+                legacy_payload = {
+                    "searchSettings": search_settings,
+                    "queries": list(chunk.values()),
+                }
+                legacy = self._request_json(
+                    "2/editorSearch/",
+                    method="POST",
+                    payload=legacy_payload,
+                )
+                request_count += 1
+                legacy_results = legacy.get("results")
+                if not isinstance(legacy_results, dict):
+                    raise MpcFillError(
+                        "MPCFill no devolvió resultados de búsqueda."
+                    )
+
+                for key, query_document in chunk.items():
+                    query = str(query_document.get("query") or "")
+                    card_type = str(
+                        query_document.get("cardType") or "CARD"
+                    )
+                    per_query = legacy_results.get(query, {})
+                    identifiers = (
+                        per_query.get(card_type, [])
+                        if isinstance(per_query, dict)
+                        else []
+                    )
+                    results[key] = (
+                        [str(value) for value in identifiers]
+                        if isinstance(identifiers, list)
+                        else []
+                    )
+
+        return results, request_count
 
     def search_cardbacks(
         self,
@@ -557,8 +911,11 @@ class MpcFillClient:
             pass
         return results
 
-    def _get_cards(self, identifiers: list[str]) -> list[dict[str, Any]]:
-        cards: list[dict[str, Any]] = []
+    def _get_card_documents(
+        self,
+        identifiers: list[str],
+    ) -> dict[str, dict[str, Any]]:
+        documents: dict[str, dict[str, Any]] = {}
         for start in range(0, len(identifiers), 1000):
             response = self._request_json(
                 "2/cards/",
@@ -568,13 +925,22 @@ class MpcFillClient:
                 },
             )
             results = response.get("results")
-            if isinstance(results, dict):
-                cards.extend(
-                    value
-                    for value in results.values()
-                    if isinstance(value, dict)
-                )
-        return cards
+            if not isinstance(results, dict):
+                continue
+            for identifier, candidate in results.items():
+                if isinstance(candidate, dict):
+                    documents[str(identifier)] = self._normalise_candidate(
+                        candidate
+                    )
+        return documents
+
+    def _get_cards(self, identifiers: list[str]) -> list[dict[str, Any]]:
+        documents = self._get_card_documents(identifiers)
+        return [
+            documents[identifier]
+            for identifier in identifiers
+            if identifier in documents
+        ]
 
     def _normalise_candidate(
         self,
@@ -593,26 +959,82 @@ class MpcFillClient:
         payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         url = urljoin(self.base_url, path)
-        try:
-            response = self.client.request(
-                method,
-                url,
-                json=payload,
-                headers={
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                    "Referer": self.base_url,
-                },
+        retryable = {429, 500, 502, 503, 504}
+        response: httpx.Response | None = None
+        last_transport_error: httpx.TransportError | None = None
+
+        for attempt in range(4):
+            try:
+                response = self.client.request(
+                    method,
+                    url,
+                    json=payload,
+                    headers={
+                        "Accept": "application/json",
+                        "Content-Type": "application/json",
+                        "Referer": self.base_url,
+                    },
+                )
+                last_transport_error = None
+            except httpx.TransportError as exc:
+                response = None
+                last_transport_error = exc
+
+            status_code = (
+                response.status_code if response is not None else None
             )
-            response.raise_for_status()
-            data = response.json()
-        except (httpx.HTTPError, ValueError) as exc:
+            should_retry = (
+                last_transport_error is not None
+                or status_code in retryable
+            )
+            if not should_retry or attempt == 3:
+                break
+
+            retry_after = 0.0
+            if response is not None:
+                try:
+                    retry_after = float(
+                        response.headers.get("Retry-After", "0")
+                    )
+                except ValueError:
+                    retry_after = 0.0
+            time.sleep(max(retry_after, 0.8 * (2**attempt)))
+
+        if response is None:
             raise MpcFillError(
-                "No se ha podido consultar MPCFill en este momento."
+                "No se ha podido conectar con MPCFill después de varios "
+                "intentos."
+            ) from last_transport_error
+
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise MpcFillError(
+                f"MPCFill devolvió HTTP {response.status_code} sin JSON "
+                "válido.",
+                status_code=response.status_code,
             ) from exc
 
+        if response.is_error:
+            name = ""
+            message = ""
+            if isinstance(data, dict):
+                name = str(data.get("name") or "").strip()
+                message = str(data.get("message") or "").strip()
+            detail = ": ".join(
+                value for value in (name, message) if value
+            )
+            suffix = f" — {detail}" if detail else ""
+            raise MpcFillError(
+                f"MPCFill devolvió HTTP {response.status_code}{suffix}",
+                status_code=response.status_code,
+            )
+
         if not isinstance(data, dict):
-            raise MpcFillError("MPCFill devolvió una respuesta inesperada.")
+            raise MpcFillError(
+                "MPCFill devolvió una respuesta inesperada.",
+                status_code=response.status_code,
+            )
         return data
 
     def _download(self, url: str) -> bytes:
@@ -687,6 +1109,8 @@ def _preferred_source_rank(
         _source_name(candidate),
         preferred_sources,
     )
+
+
 def mpc_candidate_key(candidate: dict[str, Any]) -> str:
     identifier = candidate.get("identifier")
     if identifier:
@@ -710,9 +1134,71 @@ def mpc_candidate_label(candidate: dict[str, Any]) -> str:
 
 
 def _normalise_query(value: str) -> str:
-    value = value.casefold().strip()
-    value = re.sub(r"\s+", " ", value)
-    return value
+    value = value.lower().strip()
+    punctuation = string.punctuation.replace("-", "") + "’"
+    value = value.translate(str.maketrans("", "", punctuation))
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _search_query_key(query_document: dict[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            query_document,
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()[:20]
+
+
+def _select_auto_candidate(
+    candidates: list[dict[str, Any]],
+    *,
+    preferred_language: str,
+    allowed_languages: tuple[str, ...],
+    quality_mode: str,
+    preferred_sources: tuple[str, ...],
+) -> dict[str, Any] | None:
+    allowed = {language.lower() for language in allowed_languages}
+    valid: list[dict[str, Any]] = []
+    for raw_candidate in candidates:
+        candidate = dict(raw_candidate)
+        candidate["download_url"] = _download_url(candidate)
+        if not candidate.get("download_url"):
+            continue
+
+        language = str(candidate.get("language") or "").lower()
+        if allowed and language not in allowed:
+            continue
+
+        dpi = int(candidate.get("dpi") or 0)
+        if quality_mode == "highres_only" and dpi < 800:
+            continue
+        if quality_mode != "highres_only" and dpi < 300:
+            continue
+        valid.append(candidate)
+
+    if not valid:
+        return None
+
+    def rank(candidate: dict[str, Any]) -> tuple[object, ...]:
+        language = str(candidate.get("language") or "").lower()
+        dpi = int(candidate.get("dpi") or 0)
+        language_rank = 0 if language == preferred_language else 1
+        quality_rank = (
+            0
+            if quality_mode != "prefer_highres" or dpi >= 600
+            else 1
+        )
+        return (
+            language_rank,
+            quality_rank,
+            _preferred_source_rank(candidate, preferred_sources),
+            -dpi,
+            -int(candidate.get("priority") or 0),
+            str(candidate.get("name") or "").casefold(),
+        )
+
+    return min(valid, key=rank)
 
 
 def _download_url(candidate: dict[str, Any]) -> str | None:

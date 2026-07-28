@@ -288,7 +288,7 @@ def test_primary_source_selector_exists() -> None:
     assert '"MPCFill"' in app
     assert "MrTeferi, PsilosX y Chilli_Axe" in app
     assert '"preferred_image_source"' in app
-    assert "client.resolve_auto(" in app
+    assert "client.resolve_many_auto(" in app
 
 
 
@@ -296,3 +296,23 @@ def test_mpcfill_analysis_respects_resolution_mode() -> None:
     app = app_text()
     assert "resolution_mode=resolution_mode" in app
     assert "fuzzy_search=True" in app
+
+
+
+def test_mpcfill_analysis_is_batched() -> None:
+    app = app_text()
+    assert "client.resolve_many_auto(" in app
+    assert "Consultando MPCFill en lote" in app
+    assert "mpcfill_analysis_stats" in app
+    analysis_section = app[
+        app.index('if preferred_image_source == "mpcfill":'):
+        app.index("resolved_cards = enforce_automatic_mpcfill_crop_list")
+    ]
+    assert "client.resolve_auto(" not in analysis_section
+
+
+
+def test_analysis_engine_version_invalidates_stale_results() -> None:
+    app = app_text()
+    assert 'ANALYSIS_ENGINE_VERSION = "mpcfill-batch-v1"' in app
+    assert '"engine_version": ANALYSIS_ENGINE_VERSION' in app

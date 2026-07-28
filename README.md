@@ -404,3 +404,14 @@ orden de fuentes antes de ejecutar la búsqueda.
 resultado, acepta diseños desde 300 DPI. **Buscar en cualquier edición** activa
 la búsqueda flexible de MPCFill y no restringe por edición o número de
 coleccionista.
+
+
+### Análisis MPCFill por lotes
+
+El análisis de un mazo completo envía hasta 300 consultas en una única
+petición a MPCFill. Los metadatos se recuperan en páginas de hasta 1000
+identificadores y se muestra un resumen con las consultas que tuvieron
+coincidencias y las imágenes finalmente seleccionadas.
+
+Los errores HTTP del servicio se muestran como errores de MPCFill y no se
+confunden con cartas sin diseños.

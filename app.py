@@ -60,6 +60,8 @@ st.set_page_config(
 
 st.title("🃏 Proxy Maker")
 
+ANALYSIS_ENGINE_VERSION = "mpcfill-batch-v1"
+
 if "app_step" not in st.session_state:
     st.session_state["app_step"] = (
         2 if st.session_state.get("resolved_cards") else 1
@@ -91,6 +93,19 @@ st.progress((app_step - 1) / 2)
 flash_message = st.session_state.pop("flash_message", None)
 if flash_message:
     st.success(flash_message)
+
+mpcfill_stats = st.session_state.get("mpcfill_analysis_stats", {})
+if app_step == 2 and mpcfill_stats:
+    st.info(
+        "MPCFill: "
+        f"{mpcfill_stats.get('cards', 0)} cartas analizadas · "
+        f"{mpcfill_stats.get('queries_with_hits', 0)} consultas con "
+        "coincidencias · "
+        f"{mpcfill_stats.get('resolved', 0)} imágenes seleccionadas · "
+        f"{mpcfill_stats.get('preferred_creator', 0)} de autores "
+        "preferidos · "
+        f"{mpcfill_stats.get('search_requests', 0)} peticiones de búsqueda."
+    )
 
 saved_config = dict(st.session_state.get("analysis_config") or {})
 analysis_submitted = False
@@ -331,6 +346,7 @@ else:
 
 def current_signature() -> str:
     payload = {
+        "engine_version": ANALYSIS_ENGINE_VERSION,
         "decklist": decklist_text,
         "preferred_image_source": preferred_image_source,
         "preferred_language": preferred_language,
@@ -641,34 +657,63 @@ if app_step == 1 and analysis_submitted:
             )
 
         if preferred_image_source == "mpcfill":
-            analysis_client = MpcFillClient(mpc_cache_dir())
+            status.write(
+                f"Consultando MPCFill en lote para {len(cards)} cartas..."
+            )
+            try:
+                with MpcFillClient(mpc_cache_dir()) as client:
+                    resolved_cards = client.resolve_many_auto(
+                        cards,
+                        preferred_language=preferred_language,
+                        allow_language_fallback=allow_language_fallback,
+                        resolution_mode=resolution_mode,
+                        quality_mode=quality_mode,
+                        preferred_sources=DEFAULT_PREFERRED_SOURCES,
+                    )
+                    mpcfill_stats = dict(client.last_batch_stats)
+
+                st.session_state["mpcfill_analysis_stats"] = mpcfill_stats
+                progress.progress(1.0)
+                elapsed = int(time.monotonic() - started_at)
+                status.write(
+                    "MPCFill completado · "
+                    f"{mpcfill_stats.get('resolved', 0)}/{len(cards)} "
+                    "cartas con imagen · "
+                    f"{elapsed // 60}:{elapsed % 60:02d}"
+                )
+            except MpcFillError as exc:
+                temporary_failures = len(cards)
+                st.session_state["mpcfill_analysis_stats"] = {}
+                st.error(
+                    "El análisis de MPCFill no se ha completado: "
+                    f"{exc}"
+                )
+                resolved_cards = [
+                    ResolvedCard(
+                        source=card,
+                        status="Error de MPCFill",
+                        provider="mpcfill",
+                        error=str(exc),
+                    )
+                    for card in cards
+                ]
+                progress.progress(1.0)
         else:
-            analysis_client = ScryfallClient(
+            st.session_state["mpcfill_analysis_stats"] = {}
+            with ScryfallClient(
                 cache_dir(),
                 image_quality=image_quality,
                 retry_callback=show_scryfall_retry,
-            )
-
-        with analysis_client as client:
-            for index, card in enumerate(cards, start=1):
-                current_card_name["value"] = card.name
-                elapsed = int(time.monotonic() - started_at)
-                status.write(
-                    f"Analizando {index}/{len(cards)} · "
-                    f"**{card.name}** · "
-                    f"{elapsed // 60}:{elapsed % 60:02d}"
-                )
-                try:
-                    if preferred_image_source == "mpcfill":
-                        resolved = client.resolve_auto(
-                            card,
-                            preferred_language=preferred_language,
-                            allow_language_fallback=allow_language_fallback,
-                            resolution_mode=resolution_mode,
-                            quality_mode=quality_mode,
-                            preferred_sources=DEFAULT_PREFERRED_SOURCES,
-                        )
-                    else:
+            ) as client:
+                for index, card in enumerate(cards, start=1):
+                    current_card_name["value"] = card.name
+                    elapsed = int(time.monotonic() - started_at)
+                    status.write(
+                        f"Analizando {index}/{len(cards)} · "
+                        f"**{card.name}** · "
+                        f"{elapsed // 60}:{elapsed % 60:02d}"
+                    )
+                    try:
                         resolved = resolve_with_language_fallback(
                             client,
                             card,
@@ -677,23 +722,15 @@ if app_step == 1 and analysis_submitted:
                             resolution_mode=resolution_mode,
                             quality_mode=quality_mode,
                         )
-                except ScryfallError as exc:
-                    temporary_failures += 1
-                    resolved = ResolvedCard(
-                        source=card,
-                        status="Error temporal de Scryfall",
-                        error=str(exc),
-                    )
-                except MpcFillError as exc:
-                    temporary_failures += 1
-                    resolved = ResolvedCard(
-                        source=card,
-                        status="Error temporal de MPCFill",
-                        provider="mpcfill",
-                        error=str(exc),
-                    )
-                resolved_cards.append(resolved)
-                progress.progress(index / len(cards))
+                    except ScryfallError as exc:
+                        temporary_failures += 1
+                        resolved = ResolvedCard(
+                            source=card,
+                            status="Error temporal de Scryfall",
+                            error=str(exc),
+                        )
+                    resolved_cards.append(resolved)
+                    progress.progress(index / len(cards))
 
         resolved_cards = enforce_automatic_mpcfill_crop_list(
             resolved_cards
@@ -712,11 +749,16 @@ if app_step == 1 and analysis_submitted:
         st.session_state.pop("review_only_problematic", None)
         st.session_state["app_step"] = 2
         if temporary_failures:
+            failed_source = (
+                "MPCFill"
+                if preferred_image_source == "mpcfill"
+                else "Scryfall"
+            )
             st.session_state["flash_message"] = (
                 f"Análisis completado: {len(cards)} entradas y "
                 f"{total_copies} copias. "
                 f"{temporary_failures} cartas quedaron pendientes por "
-                f"errores temporales de Scryfall."
+                f"errores temporales de {failed_source}."
             )
         else:
             st.session_state["flash_message"] = (
