@@ -175,3 +175,9 @@ def test_current_editor_search_api_and_source_order() -> None:
     rows = payload["searchSettings"]["sourceSettings"]["sources"]
     assert [row[0] for row in rows[:3]] == [4, 2, 3]
     assert identifiers == ["abc", "def"]
+
+
+
+def test_new_preferred_sources_are_registered() -> None:
+    assert "CompC" in DEFAULT_PREFERRED_SOURCES
+    assert "Hathwellcrisping" in DEFAULT_PREFERRED_SOURCES

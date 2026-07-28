@@ -286,7 +286,7 @@ def test_primary_source_selector_exists() -> None:
     assert '"Fuente principal"' in app
     assert '"Scryfall"' in app
     assert '"MPCFill"' in app
-    assert "MrTeferi, PsilosX y Chilli_Axe" in app
+    assert "MrTeferi, PsilosX, Chilli_Axe, CompC y Hathwellcrisping" in app
     assert '"preferred_image_source"' in app
     assert "client.resolve_many_auto(" in app
 

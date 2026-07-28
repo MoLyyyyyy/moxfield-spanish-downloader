@@ -389,6 +389,8 @@ para esa carta y ese idioma, diseños de estos autores:
 - MrTeferi
 - PsilosX
 - Chilli_Axe
+- CompC
+- Hathwellcrisping
 
 Si no hay ninguno disponible, continúa con el resto de diseños de MPCFill
 ordenados por DPI y prioridad.

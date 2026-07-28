@@ -22,6 +22,8 @@ DEFAULT_PREFERRED_SOURCES = (
     "MrTeferi",
     "PsilosX",
     "Chilli_Axe",
+    "CompC",
+    "Hathwellcrisping",
 )
 
 

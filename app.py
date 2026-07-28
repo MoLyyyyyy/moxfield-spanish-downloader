@@ -176,7 +176,7 @@ varias ilustraciones durante el paso de revisión.
             help=(
                 "Scryfall usa imágenes oficiales. MPCFill usa diseños de la "
                 "comunidad y, si existen, prioriza automáticamente a "
-                "MrTeferi, PsilosX y Chilli_Axe."
+                "MrTeferi, PsilosX, Chilli_Axe, CompC y Hathwellcrisping."
             ),
         )
         preferred_image_source = source_labels[source_label]
