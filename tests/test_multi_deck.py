@@ -1,4 +1,7 @@
-from mtg_downloader.multi_deck import parse_multiple_decklists
+from mtg_downloader.multi_deck import (
+    parse_deck_configurations,
+    parse_multiple_decklists,
+)
 
 
 DECK_ONE = """Commander:
@@ -65,3 +68,34 @@ def test_empty_configured_deck_is_reported() -> None:
         assert "mazo 2" in str(exc)
     else:
         raise AssertionError("La lista vacía debía producir un error")
+
+
+
+def test_summaries_record_independent_card_ranges() -> None:
+    result = parse_multiple_decklists([DECK_ONE, DECK_TWO])
+
+    assert result.summaries[0].start_index == 0
+    assert result.summaries[0].end_index == 2
+    assert result.summaries[1].start_index == 2
+    assert result.summaries[1].end_index == 4
+
+
+def test_each_deck_can_include_sideboard_independently() -> None:
+    result = parse_deck_configurations(
+        [
+            {
+                "decklist": "1 Commander One\nSideboard:\n1 Side A",
+                "include_sideboard": False,
+            },
+            {
+                "decklist": "1 Commander Two\nSideboard:\n1 Side B",
+                "include_sideboard": True,
+            },
+        ]
+    )
+
+    assert [card.name for card in result.cards] == [
+        "Commander One",
+        "Commander Two",
+        "Side B",
+    ]

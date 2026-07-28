@@ -53,7 +53,8 @@ def test_mpcfill_crop_comparator_exists() -> None:
     assert "Desplazamiento vertical del recorte" in app
     assert "Guardar ajuste de recorte" in app
     assert "Original" in app and "Resultado automático" in app
-    assert "se recortan automáticamente" in app
+    assert "Los diseños MPCFill se recortan " in app
+    assert '"automáticamente."' in app
     assert "Modo de recorte" not in app
 
 
@@ -159,7 +160,8 @@ def test_language_controls_are_explicit() -> None:
     assert '"Edición"' in app
     assert '"Calidad"' in app
     assert "allow_language_fallback" in app
-    assert "preferred_language=preferred_language" in app
+    assert 'preferred_language=config[' in app
+    assert "deck_config_for_card_index(selected_index)" in app
     assert "Perfil de selección" not in app
     assert "Personalizar reglas" not in app
 
@@ -172,7 +174,8 @@ def test_app_uses_a_three_step_wizard() -> None:
     assert 'st.form("analysis_form")' not in app
     assert 'analysis_submitted = st.button(' in app
     assert 'st.session_state["app_step"] = 2' in app
-    assert "Continuar a exportación →" in app
+    assert "Finalizar revisión y exportar →" in app
+    assert "Marcar revisado y abrir siguiente →" in app
     assert "← Volver a revisar" in app
     assert "render_workspace()" in app
     assert "render_export_panel()" in app
@@ -246,9 +249,8 @@ def test_search_options_are_always_visible() -> None:
 def test_step_two_can_return_without_losing_analysis() -> None:
     app = app_text()
     assert '"← Lista y opciones"' in app
-    assert 'key="step2_back_top"' in app
-    assert 'key="step2_back_bottom"' in app
-    assert "Volver al paso 1 no elimina el análisis" in app
+    assert 'key=f"step2_back_{location}"' in app
+    assert "Cada mazo conserva su propia configuración" in app
     assert "Volver a revisar el análisis guardado" in app
     assert "Descartar cambios y volver al análisis guardado" in app
     assert 'st.session_state["app_step"] = 1' in app
@@ -266,20 +268,21 @@ def test_alternative_filters_are_inherited_and_collapsed() -> None:
     assert 'key=f"mpc_limit_{selected_index}"' not in app
 
 
-def test_step_one_only_shows_core_search_options() -> None:
+def test_step_one_keeps_advanced_options_per_deck() -> None:
     app = app_text()
-    advanced = app.index('with st.expander("Opciones avanzadas"')
-    assert app.index('fallback_label =', advanced) > advanced
+    advanced = app.index('f"Opciones avanzadas del mazo')
+    assert app.index("allow_language_fallback = st.checkbox(", advanced) > advanced
     assert app.index('"Formato de imagen"', advanced) > advanced
     assert app.index('"Incluir sideboard"', advanced) > advanced
     assert app.index('"Incluir maybeboard"', advanced) > advanced
+    assert 'key=f"deck_fallback_{deck_position}"' in app
 
 
 def test_healthy_cards_are_collapsed() -> None:
     app = app_text()
-    assert 'f"Ver {len(healthy_indices)} cartas correctas"' in app
+    assert 'f"Ver {len(healthy_indices)} cartas correctas de este mazo"' in app
     assert 'expanded=False' in app
-    assert 'st.success("No hay cartas con problemas.")' in app
+    assert 'st.success("Este mazo no tiene cartas con problemas.")' in app
 
 
 
@@ -288,27 +291,29 @@ def test_primary_source_selector_exists() -> None:
     assert '"Fuente principal"' in app
     assert '"Scryfall"' in app
     assert '"MPCFill"' in app
-    assert "MrTeferi, PsilosX, Chilli_Axe, CompC y Hathwellcrisping" in app
+    assert "MrTeferi, PsilosX, Chilli_Axe, CompC " in app
+    assert '"y Hathwellcrisping."' in app
     assert '"preferred_image_source"' in app
     assert "client.resolve_many_auto(" in app
 
 
 
-def test_mpcfill_analysis_respects_resolution_mode() -> None:
+def test_mpcfill_analysis_respects_each_decks_resolution_mode() -> None:
     app = app_text()
-    assert "resolution_mode=resolution_mode" in app
+    assert 'resolution_mode=config[' in app
+    assert '"resolution_mode"' in app
     assert "fuzzy_search=True" in app
 
 
 
-def test_mpcfill_analysis_is_batched() -> None:
+def test_mpcfill_analysis_is_batched_per_deck() -> None:
     app = app_text()
     assert "client.resolve_many_auto(" in app
     assert "Consultando MPCFill en lote" in app
-    assert "mpcfill_analysis_stats" in app
+    assert '"deck_analysis_stats"' in app
     analysis_section = app[
-        app.index('if preferred_image_source == "mpcfill":'):
-        app.index("resolved_cards = enforce_automatic_mpcfill_crop_list")
+        app.index('if provider == "mpcfill":'):
+        app.index("deck_resolved = enforce_automatic_mpcfill_crop_list")
     ]
     assert "client.resolve_auto(" not in analysis_section
 
@@ -316,7 +321,7 @@ def test_mpcfill_analysis_is_batched() -> None:
 
 def test_analysis_engine_version_invalidates_stale_results() -> None:
     app = app_text()
-    assert 'ANALYSIS_ENGINE_VERSION = "multi-deck-v1"' in app
+    assert 'ANALYSIS_ENGINE_VERSION = "per-deck-workflow-v2"' in app
     assert '"engine_version": ANALYSIS_ENGINE_VERSION' in app
 
 
@@ -385,14 +390,18 @@ def test_export_warns_about_paid_empty_slots() -> None:
 
 
 
-def test_multiple_deck_inputs_are_supported() -> None:
+def test_multiple_deck_inputs_have_independent_settings() -> None:
     app = app_text()
     assert '"Número de mazos"' in app
     assert "max_value=12" in app
-    assert "decklist_texts: list[str]" in app
-    assert 'key=f"decklist_input_{deck_index}"' in app
+    assert "deck_configs: list[dict[str, Any]]" in app
+    assert 'key=f"decklist_input_{deck_position}"' in app
+    assert 'key=f"deck_source_{deck_position}"' in app
+    assert 'key=f"deck_language_{deck_position}"' in app
+    assert 'key=f"deck_resolution_{deck_position}"' in app
+    assert 'key=f"deck_quality_{deck_position}"' in app
     assert '"Analizar mazos"' in app
-    assert "parse_multiple_decklists(" in app
+    assert "parse_deck_configurations(" in app
     assert '"deck_summaries"' in app
     assert '"multi_deck_stats"' in app
 
@@ -410,5 +419,37 @@ def test_multiple_decks_fill_pages_continuously() -> None:
 
 def test_build_version_identifies_multideck_download() -> None:
     app = app_text()
-    assert 'BUILD_VERSION = "2026.07.28-multideck-v1"' in app
+    assert 'BUILD_VERSION = "2026.07.28-per-deck-workflow-v2"' in app
     assert '"Número de mazos"' in app
+
+
+
+def test_review_and_bulk_actions_are_scoped_to_active_deck() -> None:
+    app = app_text()
+    assert "active_deck_indices()" in app
+    assert "indices_for_deck(deck_position, summaries)" in app
+    assert "problem_indices = [" in app
+    assert "if is_problematic(cards[index])" in app
+    assert "review_indices = (" in app
+    assert "problem_indices if only_problematic else deck_indices" in app
+    assert 'key=f"bulk_selected_indices_{deck_position}"' in app
+    assert "La acción solo afecta al mazo activo" in app
+
+
+def test_deck_by_deck_navigation_exists() -> None:
+    app = app_text()
+    assert '"Mazo en revisión"' in app
+    assert '"← Mazo anterior"' in app
+    assert '"Marcar revisado y abrir siguiente →"' in app
+    assert '"Finalizar revisión y exportar →"' in app
+    assert "set_active_deck(position + 1)" in app
+    assert '"reviewed_decks"' in app
+
+
+def test_manual_alternatives_inherit_active_deck_settings() -> None:
+    app = app_text()
+    assert "deck_config = deck_config_for_card_index(selected_index)" in app
+    assert 'preferred_image_source = deck_config["preferred_image_source"]' in app
+    assert 'preferred_language = deck_config["preferred_language"]' in app
+    assert 'quality_mode = deck_config["quality_mode"]' in app
+    assert 'image_quality = deck_config["image_quality"]' in app

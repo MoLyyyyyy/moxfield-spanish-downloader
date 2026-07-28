@@ -504,16 +504,30 @@ lo que quedan 8 huecos. Los huecos se colocan únicamente al final de la última
 hoja y no bloquean la generación.
 
 
-### Varios mazos en un único PDF
+### Flujo multimazo independiente
 
-En el paso 1 se puede seleccionar entre 1 y 12 mazos y pegar cada exportación
-en un campo independiente. Las listas se mantienen separadas durante el
-análisis y la revisión, pero en el PDF se colocan de forma continua:
+El soporte multimazo funciona ahora de forma completamente independiente hasta
+la exportación final.
 
-1. todas las cartas del mazo 1;
-2. inmediatamente después, las del mazo 2;
-3. y así sucesivamente, sin saltos de hoja entre mazos.
+En el paso 1, cada pestaña de mazo tiene sus propias opciones:
 
-La pantalla de exportación muestra cuántas hojas se ahorran frente a generar un
-PDF separado para cada mazo. Las cartas repetidas entre mazos siguen siendo
-entradas independientes y no se consideran duplicados accidentales.
+- lista;
+- fuente principal: Scryfall o MPCFill;
+- idioma principal y respaldo;
+- política de edición;
+- calidad y formato de imagen;
+- inclusión de sideboard y maybeboard.
+
+El análisis se ejecuta secuencialmente, mazo por mazo, utilizando la
+configuración correspondiente. Un mazo puede estar en español con Scryfall,
+otro en inglés y otro utilizar MPCFill.
+
+En el paso 2 solo se muestra un mazo cada vez. La galería, los filtros, la
+tabla, la selección de versiones, los ajustes de recorte, los repartos de
+ilustraciones y las acciones masivas quedan limitados al mazo activo. Se puede
+avanzar mediante **Marcar revisado y abrir siguiente** o cambiar de mazo con el
+selector superior.
+
+Las cartas de los distintos mazos no se fusionan aunque tengan el mismo nombre.
+Solo se concatenan físicamente al generar el PDF, respetando el orden de los
+mazos y aprovechando los huecos de la última hoja.

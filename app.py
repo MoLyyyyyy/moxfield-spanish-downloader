@@ -19,13 +19,19 @@ from mtg_downloader.deck_view import (
     gallery_status_label,
     group_deck,
 )
-from mtg_downloader.decklist import parse_exported_decklist
 from mtg_downloader.filenames import multi_deck_pdf_filename
 from mtg_downloader.image_processing import CROP_AUTO, CROP_FORCE, CROP_NONE
 from mtg_downloader.models import CardVariant, DeckCard, ImageFace, ResolvedCard
+from mtg_downloader.deck_workflow import (
+    deck_configs_from_analysis_config,
+    deck_position_for_card,
+    deck_settings_label,
+    indices_for_deck,
+    normalise_deck_config,
+)
 from mtg_downloader.multi_deck import (
     MultiDeckResult,
-    parse_multiple_decklists,
+    parse_deck_configurations,
     serialise_deck_summaries,
 )
 from mtg_downloader.mpcfill import (
@@ -75,8 +81,8 @@ st.set_page_config(
 
 st.title("🃏 Proxy Maker")
 
-ANALYSIS_ENGINE_VERSION = "multi-deck-v1"
-BUILD_VERSION = "2026.07.28-multideck-v1"
+ANALYSIS_ENGINE_VERSION = "per-deck-workflow-v2"
+BUILD_VERSION = "2026.07.28-per-deck-workflow-v2"
 
 if "app_step" not in st.session_state:
     st.session_state["app_step"] = (
@@ -110,98 +116,101 @@ flash_message = st.session_state.pop("flash_message", None)
 if flash_message:
     st.success(flash_message)
 
-mpcfill_stats = st.session_state.get("mpcfill_analysis_stats", {})
-if app_step == 2 and mpcfill_stats:
-    st.info(
-        "MPCFill: "
-        f"{mpcfill_stats.get('cards', 0)} cartas analizadas · "
-        f"{mpcfill_stats.get('queries_with_hits', 0)} consultas con "
-        "coincidencias · "
-        f"{mpcfill_stats.get('resolved', 0)} imágenes seleccionadas · "
-        f"{mpcfill_stats.get('preferred_creator', 0)} de autores "
-        "preferidos · "
-        f"{mpcfill_stats.get('search_requests', 0)} peticiones de búsqueda."
-    )
-
 saved_config = dict(st.session_state.get("analysis_config") or {})
 analysis_submitted = False
 
 if app_step == 1:
     st.write(
-        "Pega una o varias exportaciones de mazos y elige cómo deben "
-        "buscarse las impresiones. Los mazos se imprimirán uno detrás de otro."
+        "Configura cada mazo por separado. Cada lista conserva su propia "
+        "fuente, idioma, edición y calidad durante todo el análisis y la revisión."
     )
 
-    with st.expander("Cómo obtener la lista", expanded=False):
+    with st.expander("Cómo funciona el modo multimazo", expanded=False):
         st.markdown(
             """
-1. Abre el mazo en Moxfield.
-2. Exporta o copia la lista como texto.
-3. Pega el contenido en esta aplicación.
-4. Pulsa **Analizar mazo** o **Analizar mazos**.
+1. Elige el **Número de mazos**.
+2. Abre la pestaña de cada mazo.
+3. Pega su lista y configura su fuente, idioma y calidad.
+4. Pulsa **Analizar mazos**.
+5. Revisa y corrige un mazo cada vez.
 
-```text
-Commander:
-1 Beorn the Fierce (HOB) 119 *F*
-
-Deck:
-1 Arcane Signet (TMC) 57
-27 Forest (M20) 279
-```
-
-Una entrada con 27 copias genera 27 cartas físicas y puede repartirse entre
-varias ilustraciones durante el paso de revisión.
-
-Para combinar varios mazos, aumenta **Número de mazos** y pega cada lista en su
-campo. No se añaden saltos de hoja entre ellos: el siguiente mazo comienza en
-el primer hueco libre del anterior.
+Los mazos permanecen separados durante el análisis, la galería, la edición
+manual y las acciones masivas. Solo se concatenan al generar el PDF final,
+para que el siguiente mazo rellene los huecos del anterior.
 """
         )
 
-    saved_decklists_value = saved_config.get("decklists")
-    if isinstance(saved_decklists_value, list) and saved_decklists_value:
-        saved_decklists = [str(value) for value in saved_decklists_value]
-    else:
-        saved_decklists = [str(saved_config.get("decklist", ""))]
-
-    left, right = st.columns([3, 2])
-    with left:
-        deck_count = int(
-            st.number_input(
-                "Número de mazos",
-                min_value=1,
-                max_value=12,
-                value=max(1, len(saved_decklists)),
-                step=1,
-                help=(
-                    "Cada lista se mantiene independiente durante la "
-                    "revisión, pero todas se colocan de forma continua "
-                    "en el PDF final."
-                ),
-            )
+    saved_deck_configs = deck_configs_from_analysis_config(saved_config)
+    deck_count = int(
+        st.number_input(
+            "Número de mazos",
+            min_value=1,
+            max_value=12,
+            value=max(1, len(saved_deck_configs)),
+            step=1,
+            help=(
+                "Cada mazo tendrá su propia lista y sus propios ajustes. "
+                "El orden de las pestañas será el orden del PDF final."
+            ),
         )
-        st.caption(
-            "Orden de impresión: mazo 1, mazo 2, etc. El siguiente mazo "
-            "rellena los huecos libres de la última hoja del anterior."
-        )
+    )
+    st.caption(
+        "Los ajustes y las correcciones no se mezclan entre mazos. "
+        "Durante la exportación, el siguiente mazo rellena los huecos libres "
+        "del anterior."
+    )
 
-        decklist_texts: list[str] = []
-        for deck_index in range(deck_count):
-            saved_value = (
-                saved_decklists[deck_index]
-                if deck_index < len(saved_decklists)
-                else ""
+    tabs = st.tabs(
+        [
+            (
+                f"Mazo {position + 1}"
+                if position >= len(saved_deck_configs)
+                else (
+                    f"Mazo {position + 1} · "
+                    f"{saved_deck_configs[position]['decklist'].splitlines()[0][:28]}"
+                    if saved_deck_configs[position]["decklist"].strip()
+                    else f"Mazo {position + 1}"
+                )
             )
-            label = (
-                "Lista del mazo"
-                if deck_count == 1
-                else f"Lista del mazo {deck_index + 1}"
-            )
-            decklist_texts.append(
-                st.text_area(
-                    label,
-                    value=saved_value,
-                    height=340 if deck_count == 1 else 240,
+            for position in range(deck_count)
+        ]
+    )
+
+    deck_configs: list[dict[str, Any]] = []
+    source_labels = {
+        "Scryfall · imágenes oficiales": "scryfall",
+        "MPCFill · diseños de la comunidad": "mpcfill",
+    }
+    language_labels = {
+        "Español": "es",
+        "Inglés": "en",
+    }
+    resolution_labels = {
+        "Respetar la edición indicada primero": "exact_first",
+        "Usar únicamente la edición indicada": "exact_only",
+        "Buscar en cualquier edición": "flexible",
+    }
+    quality_labels = {
+        "Preferir alta resolución": "prefer_highres",
+        "Aceptar imágenes lowres": "allow_lowres",
+        "Usar solo alta resolución": "highres_only",
+    }
+
+    for deck_position, tab in enumerate(tabs):
+        base = (
+            saved_deck_configs[deck_position]
+            if deck_position < len(saved_deck_configs)
+            else normalise_deck_config(None)
+        )
+        with tab:
+            st.markdown(f"### Configuración del mazo {deck_position + 1}")
+            list_column, settings_column = st.columns([3, 2])
+
+            with list_column:
+                decklist = st.text_area(
+                    "Lista",
+                    value=base["decklist"],
+                    height=390,
                     placeholder=(
                         "Commander:\n"
                         "1 Beorn the Fierce (HOB) 119 *F*\n\n"
@@ -213,222 +222,138 @@ el primer hueco libre del anterior.
                         "Se respetan cantidad, edición y número de "
                         "coleccionista."
                     ),
-                    key=f"decklist_input_{deck_index}",
+                    key=f"decklist_input_{deck_position}",
                 )
-            )
 
-    with right:
-        st.subheader("Opciones de análisis")
-
-        source_labels = {
-            "Scryfall": "scryfall",
-            "MPCFill": "mpcfill",
-        }
-        saved_image_source = str(
-            saved_config.get("preferred_image_source", "scryfall")
-        )
-        if saved_image_source not in {"scryfall", "mpcfill"}:
-            saved_image_source = "scryfall"
-        current_source_label = (
-            "MPCFill" if saved_image_source == "mpcfill" else "Scryfall"
-        )
-        source_label = st.selectbox(
-            "Fuente principal",
-            options=list(source_labels),
-            index=list(source_labels).index(current_source_label),
-            help=(
-                "Scryfall usa imágenes oficiales. MPCFill usa diseños de la "
-                "comunidad y, si existen, prioriza automáticamente a "
-                "MrTeferi, PsilosX, Chilli_Axe, CompC y Hathwellcrisping."
-            ),
-        )
-        preferred_image_source = source_labels[source_label]
-
-        language_labels = {
-            "Español": "es",
-            "Inglés": "en",
-        }
-        saved_language = str(
-            saved_config.get("preferred_language", "es")
-        )
-        if saved_language not in {"es", "en"}:
-            saved_language = "es"
-        current_language_label = (
-            "Español" if saved_language == "es" else "Inglés"
-        )
-        language_label = st.selectbox(
-            "Idioma principal",
-            options=list(language_labels),
-            index=list(language_labels).index(current_language_label),
-            help=(
-                "La búsqueda se completa en este idioma antes de probar "
-                "el idioma de respaldo."
-            ),
-        )
-        preferred_language = language_labels[language_label]
-
-        resolution_labels = {
-            "Respetar la edición indicada primero": "exact_first",
-            "Usar únicamente la edición indicada": "exact_only",
-            "Buscar en cualquier edición": "flexible",
-        }
-        saved_resolution = str(
-            saved_config.get("resolution_mode", "exact_first")
-        )
-        current_resolution_label = next(
-            (
-                label
-                for label, value in resolution_labels.items()
-                if value == saved_resolution
-            ),
-            "Respetar la edición indicada primero",
-        )
-        resolution_label = st.selectbox(
-            "Edición",
-            options=list(resolution_labels),
-            index=list(resolution_labels).index(
-                current_resolution_label
-            ),
-            help=(
-                "Define cuánto debe respetarse la edición y el número de "
-                "coleccionista de la lista."
-            ),
-        )
-        resolution_mode = resolution_labels[resolution_label]
-
-        quality_labels = {
-            "Preferir alta resolución": "prefer_highres",
-            "Aceptar imágenes lowres": "allow_lowres",
-            "Usar solo alta resolución": "highres_only",
-        }
-        saved_quality = str(
-            saved_config.get("quality_mode", "prefer_highres")
-        )
-        current_quality_label = next(
-            (
-                label
-                for label, value in quality_labels.items()
-                if value == saved_quality
-            ),
-            "Preferir alta resolución",
-        )
-        quality_label = st.selectbox(
-            "Calidad",
-            options=list(quality_labels),
-            index=list(quality_labels).index(current_quality_label),
-        )
-        quality_mode = quality_labels[quality_label]
-
-        image_quality = str(saved_config.get("image_quality", "png"))
-        with st.expander("Opciones avanzadas", expanded=False):
-            fallback_label = (
-                "Usar inglés como respaldo si falta una imagen válida"
-                if preferred_language == "es"
-                else "Usar español como respaldo si falta una imagen válida"
-            )
-            allow_language_fallback = st.checkbox(
-                fallback_label,
-                value=bool(
-                    saved_config.get("allow_language_fallback", True)
-                ),
-            )
-
-            image_quality_label = st.selectbox(
-                "Formato de imagen",
-                [
-                    "PNG — máxima calidad",
-                    "JPG grande — menos espacio",
-                ],
-                index=0 if image_quality == "png" else 1,
-            )
-            image_quality = (
-                "png"
-                if image_quality_label.startswith("PNG")
-                else "large"
-            )
-
-            board_options = st.columns(2)
-            with board_options[0]:
-                include_sideboard = st.checkbox(
-                    "Incluir sideboard",
-                    value=bool(
-                        saved_config.get("include_sideboard", False)
+            with settings_column:
+                source_value = base["preferred_image_source"]
+                source_label = st.selectbox(
+                    "Fuente principal",
+                    options=list(source_labels),
+                    index=list(source_labels.values()).index(source_value),
+                    key=f"deck_source_{deck_position}",
+                    help=(
+                        "Esta elección solo se aplica a este mazo. "
+                        "Las cartas podrán corregirse manualmente con "
+                        "Scryfall o MPCFill durante la revisión. MPCFill "
+                        "prioriza a MrTeferi, PsilosX, Chilli_Axe, CompC "
+                        "y Hathwellcrisping."
                     ),
                 )
-            with board_options[1]:
-                include_maybeboard = st.checkbox(
-                    "Incluir maybeboard",
-                    value=bool(
-                        saved_config.get("include_maybeboard", False)
-                    ),
+                preferred_image_source = source_labels[source_label]
+
+                language_value = base["preferred_language"]
+                language_label = st.selectbox(
+                    "Idioma principal",
+                    options=list(language_labels),
+                    index=list(language_labels.values()).index(language_value),
+                    key=f"deck_language_{deck_position}",
                 )
+                preferred_language = language_labels[language_label]
+
+                resolution_value = base["resolution_mode"]
+                resolution_label = st.selectbox(
+                    "Edición",
+                    options=list(resolution_labels),
+                    index=list(resolution_labels.values()).index(
+                        resolution_value
+                    ),
+                    key=f"deck_resolution_{deck_position}",
+                )
+                resolution_mode = resolution_labels[resolution_label]
+
+                quality_value = base["quality_mode"]
+                quality_label = st.selectbox(
+                    "Calidad",
+                    options=list(quality_labels),
+                    index=list(quality_labels.values()).index(quality_value),
+                    key=f"deck_quality_{deck_position}",
+                )
+                quality_mode = quality_labels[quality_label]
+
+                with st.expander(
+                    f"Opciones avanzadas del mazo {deck_position + 1}",
+                    expanded=False,
+                ):
+                    fallback_language = (
+                        "inglés"
+                        if preferred_language == "es"
+                        else "español"
+                    )
+                    allow_language_fallback = st.checkbox(
+                        f"Usar {fallback_language} como respaldo",
+                        value=base["allow_language_fallback"],
+                        key=f"deck_fallback_{deck_position}",
+                    )
+
+                    image_quality_label = st.selectbox(
+                        "Formato de imagen",
+                        [
+                            "PNG · máxima calidad",
+                            "JPG grande · menos espacio",
+                        ],
+                        index=(
+                            0
+                            if base["image_quality"] == "png"
+                            else 1
+                        ),
+                        key=f"deck_image_quality_{deck_position}",
+                    )
+                    image_quality = (
+                        "png"
+                        if image_quality_label.startswith("PNG")
+                        else "large"
+                    )
+
+                    include_sideboard = st.checkbox(
+                        "Incluir sideboard",
+                        value=base["include_sideboard"],
+                        key=f"deck_sideboard_{deck_position}",
+                    )
+                    include_maybeboard = st.checkbox(
+                        "Incluir maybeboard",
+                        value=base["include_maybeboard"],
+                        key=f"deck_maybeboard_{deck_position}",
+                    )
+
+                st.info(
+                    "Este mazo se analizará con: "
+                    f"{'MPCFill' if preferred_image_source == 'mpcfill' else 'Scryfall'} "
+                    f"· {'español' if preferred_language == 'es' else 'inglés'}."
+                )
+
+            deck_configs.append(
+                normalise_deck_config(
+                    {
+                        "decklist": decklist,
+                        "preferred_image_source": preferred_image_source,
+                        "preferred_language": preferred_language,
+                        "allow_language_fallback": allow_language_fallback,
+                        "resolution_mode": resolution_mode,
+                        "quality_mode": quality_mode,
+                        "image_quality": image_quality,
+                        "include_sideboard": include_sideboard,
+                        "include_maybeboard": include_maybeboard,
+                    }
+                )
+            )
 
     analysis_submitted = st.button(
         "Analizar mazo" if deck_count == 1 else "Analizar mazos",
         type="primary",
         width="stretch",
     )
-
-    analysis_config = {
-        "decklists": decklist_texts,
-        "decklist": decklist_texts[0],
-        "preferred_image_source": preferred_image_source,
-        "preferred_language": preferred_language,
-        "allow_language_fallback": allow_language_fallback,
-        "resolution_mode": resolution_mode,
-        "quality_mode": quality_mode,
-        "image_quality": image_quality,
-        "include_sideboard": include_sideboard,
-        "include_maybeboard": include_maybeboard,
-    }
+    analysis_config = {"decks": deck_configs}
 else:
     analysis_config = saved_config
-    configured_decklists = analysis_config.get("decklists")
-    if isinstance(configured_decklists, list) and configured_decklists:
-        decklist_texts = [
-            str(value) for value in configured_decklists
-        ]
-    else:
-        decklist_texts = [
-            str(analysis_config.get("decklist", ""))
-        ]
-    deck_count = len(decklist_texts)
-    preferred_image_source = str(
-        analysis_config.get("preferred_image_source", "scryfall")
-    )
-    preferred_language = str(
-        analysis_config.get("preferred_language", "es")
-    )
-    allow_language_fallback = bool(
-        analysis_config.get("allow_language_fallback", True)
-    )
-    resolution_mode = str(
-        analysis_config.get("resolution_mode", "exact_first")
-    )
-    quality_mode = str(
-        analysis_config.get("quality_mode", "prefer_highres")
-    )
-    image_quality = str(analysis_config.get("image_quality", "png"))
-    include_sideboard = bool(
-        analysis_config.get("include_sideboard", False)
-    )
-    include_maybeboard = bool(
-        analysis_config.get("include_maybeboard", False)
-    )
+    deck_configs = deck_configs_from_analysis_config(analysis_config)
+    deck_count = len(deck_configs)
 
 
 def current_signature() -> str:
     payload = {
         "engine_version": ANALYSIS_ENGINE_VERSION,
-        "decklists": decklist_texts,
-        "preferred_image_source": preferred_image_source,
-        "preferred_language": preferred_language,
-        "allow_language_fallback": allow_language_fallback,
-        "resolution_mode": resolution_mode,
-        "quality_mode": quality_mode,
-        "image_quality": image_quality,
-        "include_sideboard": include_sideboard,
-        "include_maybeboard": include_maybeboard,
+        "decks": deck_configs,
     }
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -436,10 +361,75 @@ def current_signature() -> str:
 
 
 def load_decks() -> MultiDeckResult:
-    return parse_multiple_decklists(
-        decklist_texts,
-        include_sideboard=include_sideboard,
-        include_maybeboard=include_maybeboard,
+    return parse_deck_configurations(deck_configs)
+
+
+def stored_deck_summaries() -> list[dict[str, Any]]:
+    return list(st.session_state.get("deck_summaries") or [])
+
+
+def active_deck_position() -> int:
+    summaries = stored_deck_summaries()
+    if not summaries:
+        return 0
+    current = int(st.session_state.get("active_review_deck", 0))
+    return min(max(current, 0), len(summaries) - 1)
+
+
+def active_deck_indices() -> list[int]:
+    return indices_for_deck(
+        active_deck_position(),
+        stored_deck_summaries(),
+    )
+
+
+def deck_config_for_position(position: int) -> dict[str, Any]:
+    configs = deck_configs_from_analysis_config(
+        st.session_state.get("analysis_config") or analysis_config
+    )
+    if not configs:
+        return normalise_deck_config(None)
+    position = min(max(position, 0), len(configs) - 1)
+    return configs[position]
+
+
+def deck_config_for_card_index(index: int) -> dict[str, Any]:
+    position = deck_position_for_card(
+        index,
+        stored_deck_summaries(),
+    )
+    return deck_config_for_position(position)
+
+
+def image_quality_for_card_index(index: int | None = None) -> str:
+    if index is None:
+        position = active_deck_position()
+    else:
+        position = deck_position_for_card(
+            index,
+            stored_deck_summaries(),
+        )
+    return str(
+        deck_config_for_position(position).get(
+            "image_quality",
+            "png",
+        )
+    )
+
+
+def set_active_deck(position: int) -> None:
+    summaries = stored_deck_summaries()
+    if not summaries:
+        return
+    position = min(max(position, 0), len(summaries) - 1)
+    st.session_state["active_review_deck"] = position
+    indices = indices_for_deck(position, summaries)
+    if indices:
+        set_review_index(indices[0])
+    st.session_state.pop("review_only_problematic", None)
+    st.session_state["workspace_mode"] = "Vista del mazo"
+    st.session_state["workspace_selector_version"] = (
+        st.session_state.get("workspace_selector_version", 0) + 1
     )
 
 
@@ -518,13 +508,16 @@ def gallery_preview(
     return card.faces[0].url if card.faces else None
 
 
-def prefetch_selection(selection: ResolvedCard) -> None:
+def prefetch_selection(
+    selection: ResolvedCard,
+    index: int | None = None,
+) -> None:
     if not selection.faces:
         return
     try:
         with ScryfallClient(
             cache_dir(),
-            image_quality=st.session_state.get("analysis_image_quality", "png"),
+            image_quality=image_quality_for_card_index(index),
         ) as client:
             for variant in effective_variants(selection):
                 for face in variant.faces:
@@ -575,7 +568,7 @@ def save_replacement(
         updated = replace_all_copies(current, enforce_automatic_mpcfill_crop(replacement))
     cards[index] = updated
     st.session_state["resolved_cards"] = cards
-    prefetch_selection(updated)
+    prefetch_selection(updated, index)
     if advance_indices:
         set_review_index(next_index(advance_indices, index))
     clear_generated_output()
@@ -609,7 +602,7 @@ def update_mpc_crop(
         card.scryfall_data = copy.deepcopy(primary.metadata)
     cards[index] = card
     st.session_state["resolved_cards"] = cards
-    prefetch_selection(card)
+    prefetch_selection(card, index)
     clear_generated_output()
 
 
@@ -634,7 +627,7 @@ def apply_bulk_action(indices: list[int], action: str) -> None:
             }[action]
             with ScryfallClient(
                 cache_dir(),
-                image_quality=st.session_state["analysis_image_quality"],
+                image_quality=image_quality_for_card_index(indices[0]),
             ) as client:
                 for position, index in enumerate(indices, start=1):
                     status.write(f"Actualizando **{cards[index].source.name}**")
@@ -645,7 +638,7 @@ def apply_bulk_action(indices: list[int], action: str) -> None:
                         quality_mode=settings[2],
                     )
                     cards[index] = replace_all_copies(cards[index], replacement)
-                    prefetch_selection(cards[index])
+                    prefetch_selection(cards[index], index)
                     progress.progress(position / len(indices))
 
         elif action == "Primer diseño MPCFill de mayor DPI":
@@ -665,7 +658,7 @@ def apply_bulk_action(indices: list[int], action: str) -> None:
                             type_line=cards[index].type_line,
                         )
                         cards[index] = replace_all_copies(cards[index], replacement)
-                        prefetch_selection(cards[index])
+                        prefetch_selection(cards[index], index)
                     progress.progress(position / len(indices))
 
         elif action == "Unificar por nombre con la primera selección":
@@ -673,7 +666,7 @@ def apply_bulk_action(indices: list[int], action: str) -> None:
             for position, index in enumerate(indices, start=1):
                 if cards[index].source.name.casefold() == template.source.name.casefold():
                     cards[index] = clone_selection_for_card(template, cards[index])
-                    prefetch_selection(cards[index])
+                    prefetch_selection(cards[index], index)
                 progress.progress(position / len(indices))
 
         st.session_state["resolved_cards"] = cards
@@ -708,7 +701,9 @@ if app_step == 1 and analysis_submitted:
         status = st.empty()
         started_at = time.monotonic()
         resolved_cards: list[ResolvedCard] = []
+        deck_analysis_stats: list[dict[str, Any]] = []
         temporary_failures = 0
+        processed_entries = 0
         current_card_name = {"value": ""}
 
         def show_scryfall_retry(
@@ -729,89 +724,185 @@ if app_step == 1 and analysis_submitted:
                 f"**{current_card_name['value']}**"
             )
 
-        if preferred_image_source == "mpcfill":
-            status.write(
-                f"Consultando MPCFill en lote para {len(cards)} cartas..."
-            )
-            try:
-                with MpcFillClient(mpc_cache_dir()) as client:
-                    resolved_cards = client.resolve_many_auto(
-                        cards,
-                        preferred_language=preferred_language,
-                        allow_language_fallback=allow_language_fallback,
-                        resolution_mode=resolution_mode,
-                        quality_mode=quality_mode,
-                        preferred_sources=DEFAULT_PREFERRED_SOURCES,
-                    )
-                    mpcfill_stats = dict(client.last_batch_stats)
+        for deck_position, summary in enumerate(
+            multi_deck_result.summaries
+        ):
+            config = deck_configs[deck_position]
+            deck_cards = cards[
+                summary.start_index:summary.end_index
+            ]
+            deck_number = deck_position + 1
+            deck_total = len(deck_cards)
+            provider = config["preferred_image_source"]
+            deck_failures = 0
+            deck_stat: dict[str, Any] = {
+                "index": deck_number,
+                "name": summary.name,
+                "provider": provider,
+                "preferred_language": config["preferred_language"],
+                "entries": deck_total,
+                "copies": summary.copies,
+                "resolved": 0,
+                "failures": 0,
+            }
 
-                st.session_state["mpcfill_analysis_stats"] = mpcfill_stats
-                progress.progress(1.0)
-                elapsed = int(time.monotonic() - started_at)
-                status.write(
-                    "MPCFill completado · "
-                    f"{mpcfill_stats.get('resolved', 0)}/{len(cards)} "
-                    "cartas con imagen · "
-                    f"{elapsed // 60}:{elapsed % 60:02d}"
+            status.write(
+                (
+                    "Consultando MPCFill en lote · "
+                    if provider == "mpcfill"
+                    else "Analizando con Scryfall · "
                 )
-            except MpcFillError as exc:
-                temporary_failures = len(cards)
-                st.session_state["mpcfill_analysis_stats"] = {}
-                st.error(
-                    "El análisis de MPCFill no se ha completado: "
-                    f"{exc}"
-                )
-                resolved_cards = [
-                    ResolvedCard(
-                        source=card,
-                        status="Error de MPCFill",
-                        provider="mpcfill",
-                        error=str(exc),
-                    )
-                    for card in cards
-                ]
-                progress.progress(1.0)
-        else:
-            st.session_state["mpcfill_analysis_stats"] = {}
-            with ScryfallClient(
-                cache_dir(),
-                image_quality=image_quality,
-                retry_callback=show_scryfall_retry,
-            ) as client:
-                for index, card in enumerate(cards, start=1):
-                    current_card_name["value"] = card.name
-                    elapsed = int(time.monotonic() - started_at)
-                    status.write(
-                        f"Analizando {index}/{len(cards)} · "
-                        f"**{card.name}** · "
-                        f"{elapsed // 60}:{elapsed % 60:02d}"
-                    )
-                    try:
-                        resolved = resolve_with_language_fallback(
-                            client,
-                            card,
-                            preferred_language=preferred_language,
-                            allow_language_fallback=allow_language_fallback,
-                            resolution_mode=resolution_mode,
-                            quality_mode=quality_mode,
+                + f"**Mazo {deck_number}/{multi_deck_result.deck_count}: "
+                f"{summary.name}** · "
+                f"{'MPCFill' if provider == 'mpcfill' else 'Scryfall'} · "
+                f"{'español' if config['preferred_language'] == 'es' else 'inglés'}"
+            )
+
+            if provider == "mpcfill":
+                try:
+                    with MpcFillClient(mpc_cache_dir()) as client:
+                        deck_resolved = client.resolve_many_auto(
+                            deck_cards,
+                            preferred_language=config[
+                                "preferred_language"
+                            ],
+                            allow_language_fallback=config[
+                                "allow_language_fallback"
+                            ],
+                            resolution_mode=config[
+                                "resolution_mode"
+                            ],
+                            quality_mode=config["quality_mode"],
+                            preferred_sources=DEFAULT_PREFERRED_SOURCES,
                         )
-                    except ScryfallError as exc:
-                        temporary_failures += 1
-                        resolved = ResolvedCard(
+                        mpc_stats = dict(client.last_batch_stats)
+
+                    deck_stat.update(
+                        {
+                            "resolved": int(
+                                mpc_stats.get("resolved", 0)
+                            ),
+                            "queries_with_hits": int(
+                                mpc_stats.get(
+                                    "queries_with_hits",
+                                    0,
+                                )
+                            ),
+                            "preferred_creator": int(
+                                mpc_stats.get(
+                                    "preferred_creator",
+                                    0,
+                                )
+                            ),
+                            "search_requests": int(
+                                mpc_stats.get(
+                                    "search_requests",
+                                    0,
+                                )
+                            ),
+                        }
+                    )
+                    deck_failures = sum(
+                        1 for card in deck_resolved if not card.faces
+                    )
+                except MpcFillError as exc:
+                    deck_failures = deck_total
+                    deck_resolved = [
+                        ResolvedCard(
                             source=card,
-                            status="Error temporal de Scryfall",
+                            status="Error de MPCFill",
+                            provider="mpcfill",
                             error=str(exc),
                         )
-                    resolved_cards.append(resolved)
-                    progress.progress(index / len(cards))
+                        for card in deck_cards
+                    ]
+                    deck_stat["error"] = str(exc)
+            else:
+                deck_resolved = []
+                with ScryfallClient(
+                    cache_dir(),
+                    image_quality=config["image_quality"],
+                    retry_callback=show_scryfall_retry,
+                ) as client:
+                    for local_index, card in enumerate(
+                        deck_cards,
+                        start=1,
+                    ):
+                        current_card_name["value"] = (
+                            f"Mazo {deck_number} · {card.name}"
+                        )
+                        elapsed = int(
+                            time.monotonic() - started_at
+                        )
+                        status.write(
+                            f"Mazo {deck_number}/{multi_deck_result.deck_count} "
+                            f"· carta {local_index}/{deck_total} · "
+                            f"**{card.name}** · "
+                            f"{elapsed // 60}:{elapsed % 60:02d}"
+                        )
+                        try:
+                            resolved = resolve_with_language_fallback(
+                                client,
+                                card,
+                                preferred_language=config[
+                                    "preferred_language"
+                                ],
+                                allow_language_fallback=config[
+                                    "allow_language_fallback"
+                                ],
+                                resolution_mode=config[
+                                    "resolution_mode"
+                                ],
+                                quality_mode=config["quality_mode"],
+                            )
+                        except ScryfallError as exc:
+                            deck_failures += 1
+                            resolved = ResolvedCard(
+                                source=card,
+                                status=(
+                                    "Error temporal de Scryfall"
+                                ),
+                                error=str(exc),
+                            )
+                        deck_resolved.append(resolved)
+                        processed_entries += 1
+                        progress.progress(
+                            processed_entries / max(len(cards), 1)
+                        )
 
-        resolved_cards = enforce_automatic_mpcfill_crop_list(
-            resolved_cards
-        )
+                deck_stat["resolved"] = sum(
+                    1 for card in deck_resolved if card.faces
+                )
+
+            if provider == "mpcfill":
+                processed_entries += deck_total
+                progress.progress(
+                    processed_entries / max(len(cards), 1)
+                )
+
+            deck_resolved = enforce_automatic_mpcfill_crop_list(
+                deck_resolved
+            )
+            resolved_cards.extend(deck_resolved)
+            deck_stat["failures"] = deck_failures
+            temporary_failures += deck_failures
+            deck_analysis_stats.append(deck_stat)
+
+            elapsed = int(time.monotonic() - started_at)
+            status.write(
+                f"Mazo {deck_number} completado · "
+                f"{deck_stat['resolved']}/{deck_total} con imagen · "
+                f"{elapsed // 60}:{elapsed % 60:02d}"
+            )
+
+        progress.progress(1.0)
         st.session_state["cards"] = cards
         st.session_state["resolved_cards"] = resolved_cards
         st.session_state["deck_summaries"] = (
-            serialise_deck_summaries(multi_deck_result)
+            serialise_deck_summaries(
+                multi_deck_result,
+                deck_configs,
+            )
         )
         st.session_state["multi_deck_stats"] = {
             "deck_count": multi_deck_result.deck_count,
@@ -829,9 +920,11 @@ if app_step == 1 and analysis_submitted:
         }
         st.session_state["analysis_config"] = analysis_config
         st.session_state["analysis_signature"] = requested_signature
-        st.session_state["analysis_image_quality"] = image_quality
+        st.session_state["deck_analysis_stats"] = deck_analysis_stats
         st.session_state["alternatives"] = {}
         st.session_state["mpc_alternatives"] = {}
+        st.session_state["active_review_deck"] = 0
+        st.session_state["reviewed_decks"] = []
         st.session_state["review_selected_index"] = 0
         st.session_state["review_selector_version"] = 0
         st.session_state["workspace_mode"] = "Vista del mazo"
@@ -839,22 +932,16 @@ if app_step == 1 and analysis_submitted:
         st.session_state.pop("review_only_problematic", None)
         st.session_state["app_step"] = 2
         if temporary_failures:
-            failed_source = (
-                "MPCFill"
-                if preferred_image_source == "mpcfill"
-                else "Scryfall"
-            )
             st.session_state["flash_message"] = (
-                f"Análisis completado: "
+                f"Análisis completado mazo por mazo: "
                 f"{multi_deck_result.deck_count} "
                 f"{'mazo' if multi_deck_result.deck_count == 1 else 'mazos'}, "
                 f"{len(cards)} entradas y {total_copies} copias. "
-                f"{temporary_failures} cartas quedaron pendientes por "
-                f"errores temporales de {failed_source}."
+                f"{temporary_failures} entradas requieren revisión."
             )
         else:
             st.session_state["flash_message"] = (
-                f"Análisis completado: "
+                f"Análisis completado mazo por mazo: "
                 f"{multi_deck_result.deck_count} "
                 f"{'mazo' if multi_deck_result.deck_count == 1 else 'mazos'}, "
                 f"{len(cards)} entradas y {total_copies} copias."
@@ -895,7 +982,8 @@ if app_step == 1 and analysis_ready:
 
 def render_bulk_panel(filtered: list[int]) -> None:
     cards: list[ResolvedCard] = st.session_state["resolved_cards"]
-    with st.expander("⚙️ Edición masiva", expanded=False):
+    deck_position = active_deck_position()
+    with st.expander("⚙️ Edición masiva de este mazo", expanded=False):
         selected_indices = st.multiselect(
             "Cartas afectadas",
             options=filtered,
@@ -903,7 +991,7 @@ def render_bulk_panel(filtered: list[int]) -> None:
                 f"{cards[index].source.quantity}× {cards[index].source.name} — "
                 f"{gallery_status_label(cards[index])}"
             ),
-            key="bulk_selected_indices",
+            key=f"bulk_selected_indices_{deck_position}",
         )
         action = st.selectbox(
             "Acción",
@@ -914,14 +1002,21 @@ def render_bulk_panel(filtered: list[int]) -> None:
                 "Primer diseño MPCFill de mayor DPI",
                 "Unificar por nombre con la primera selección",
             ],
+            key=f"bulk_action_{deck_position}",
         )
         st.caption(
-            "Las imágenes de MPCFill se recortan automáticamente. Las demás no necesitan recorte."
+            "La acción solo afecta al mazo activo. Nunca modifica cartas "
+            "de los demás mazos. Los diseños MPCFill se recortan "
+            "automáticamente."
         )
-        if st.button("Aplicar acción masiva", type="primary", width="stretch"):
+        if st.button(
+            "Aplicar acción masiva al mazo actual",
+            type="primary",
+            width="stretch",
+            key=f"bulk_apply_{deck_position}",
+        ):
             apply_bulk_action(selected_indices, action)
             st.rerun(scope="fragment")
-
 
 
 def render_gallery_grouped_section(
@@ -972,33 +1067,78 @@ def render_gallery_grouped_section(
 
 def render_deck_gallery() -> None:
     cards: list[ResolvedCard] = st.session_state["resolved_cards"]
-    st.subheader("2. Vista del mazo")
-    st.caption(
-        "Las cartas problemáticas aparecen primero, agrupadas aparte del resto. "
-        "Usa los filtros, selecciona varias entradas para cambios masivos o abre una carta concreta."
+    summaries = stored_deck_summaries()
+    deck_position = active_deck_position()
+    summary = summaries[deck_position]
+    deck_indices = indices_for_deck(deck_position, summaries)
+    deck_cards = [cards[index] for index in deck_indices]
+    config = deck_config_for_position(deck_position)
+
+    st.subheader(
+        f"2. Mazo {deck_position + 1} de {len(summaries)} · "
+        f"{summary['name']}"
     )
+    st.caption(
+        f"Ajustes de este mazo: {deck_settings_label(config)}. "
+        "La galería, los filtros y las acciones masivas están aislados "
+        "del resto de mazos."
+    )
+
+    analysis_stats = list(
+        st.session_state.get("deck_analysis_stats") or []
+    )
+    if deck_position < len(analysis_stats):
+        stats = analysis_stats[deck_position]
+        provider_label = (
+            "MPCFill"
+            if stats.get("provider") == "mpcfill"
+            else "Scryfall"
+        )
+        details = (
+            f"{provider_label}: {stats.get('resolved', 0)}/"
+            f"{stats.get('entries', len(deck_cards))} entradas con imagen"
+        )
+        if stats.get("provider") == "mpcfill":
+            details += (
+                f" · {stats.get('queries_with_hits', 0)} consultas "
+                f"con resultados · {stats.get('preferred_creator', 0)} "
+                "de autores preferidos"
+            )
+        st.info(details)
 
     with ScryfallClient(
         cache_dir(),
-        image_quality=st.session_state["analysis_image_quality"],
+        image_quality=config["image_quality"],
     ) as cache_client:
-        cached, total_cache = cache_stats(cards, cache_client)
+        cached, total_cache = cache_stats(deck_cards, cache_client)
 
-    problem_count = sum(is_problematic(card) for card in cards)
-    multiple_count = sum(card_has_multiple_arts(card) for card in cards)
+    problem_count = sum(is_problematic(card) for card in deck_cards)
+    multiple_count = sum(
+        card_has_multiple_arts(card) for card in deck_cards
+    )
     metrics = st.columns(5)
-    metrics[0].metric("Copias", sum(card.source.quantity for card in cards))
-    metrics[1].metric("Entradas", len(cards))
+    metrics[0].metric(
+        "Copias",
+        sum(card.source.quantity for card in deck_cards),
+    )
+    metrics[1].metric("Entradas", len(deck_cards))
     metrics[2].metric("Pendientes", problem_count)
     metrics[3].metric("Varios artes", multiple_count)
     metrics[4].metric("Caché", f"{cached}/{total_cache}")
 
-
     filter_cols = st.columns([2.4, 1, 1.2, 1, 1.1])
     with filter_cols[0]:
-        query = st.text_input("Buscar", placeholder="Nombre de carta")
+        query = st.text_input(
+            "Buscar",
+            placeholder="Nombre de carta",
+            key=f"gallery_query_{deck_position}",
+        )
     with filter_cols[1]:
-        provider = st.selectbox("Fuente", ["Todos", "Scryfall", "MPCFill"])
+        provider = st.selectbox(
+            "Fuente",
+            ["Todos", "Scryfall", "MPCFill"],
+            key=f"gallery_provider_{deck_position}",
+        )
     with filter_cols[2]:
         state = st.selectbox(
             "Estado",
@@ -1010,27 +1150,41 @@ def render_deck_gallery() -> None:
                 "Baja resolución",
                 "Sin imagen",
             ],
+            key=f"gallery_state_{deck_position}",
         )
     with filter_cols[3]:
-        language = st.selectbox("Idioma", ["Todos", "es", "en"])
+        language = st.selectbox(
+            "Idioma",
+            ["Todos", "es", "en"],
+            key=f"gallery_language_{deck_position}",
+        )
     with filter_cols[4]:
-        sorting = st.selectbox("Orden", ["Categoría", "Nombre", "Cantidad"])
+        sorting = st.selectbox(
+            "Orden",
+            ["Categoría", "Nombre", "Cantidad"],
+            key=f"gallery_sort_{deck_position}",
+        )
 
-    indices = filtered_indices(
-        cards,
+    local_indices = filtered_indices(
+        deck_cards,
         query=query,
         provider=provider,
         state=state,
         language=language,
     )
+    indices = [deck_indices[index] for index in local_indices]
     if sorting == "Nombre":
-        indices.sort(key=lambda index: cards[index].source.name.casefold())
+        indices.sort(
+            key=lambda index: cards[index].source.name.casefold()
+        )
     elif sorting == "Cantidad":
-        indices.sort(key=lambda index: -cards[index].source.quantity)
+        indices.sort(
+            key=lambda index: -cards[index].source.quantity
+        )
 
     render_bulk_panel(indices)
     if not indices:
-        st.info("No hay cartas que coincidan con los filtros.")
+        st.info("No hay cartas de este mazo que coincidan con los filtros.")
         return
 
     problematic_indices = [
@@ -1047,17 +1201,18 @@ def render_deck_gallery() -> None:
         if problematic_indices:
             render_gallery_grouped_section(
                 "⚠️ Cartas con problemas",
-                "Estas cartas necesitan revisión o pueden requerir una edición manual.",
+                "Estas cartas necesitan revisión y pertenecen "
+                "únicamente al mazo activo.",
                 problematic_indices,
                 cards,
                 mpc_client,
             )
         else:
-            st.success("No hay cartas con problemas.")
+            st.success("Este mazo no tiene cartas con problemas.")
 
         if healthy_indices:
             with st.expander(
-                f"Ver {len(healthy_indices)} cartas correctas",
+                f"Ver {len(healthy_indices)} cartas correctas de este mazo",
                 expanded=False,
             ):
                 render_gallery_grouped_section(
@@ -1259,7 +1414,14 @@ def render_candidate_actions(
 
 def render_review_panel() -> None:
     cards: list[ResolvedCard] = st.session_state["resolved_cards"]
-    problem_indices = [index for index, card in enumerate(cards) if is_problematic(card)]
+    summaries = stored_deck_summaries()
+    deck_position = active_deck_position()
+    summary = summaries[deck_position]
+    deck_indices = indices_for_deck(deck_position, summaries)
+    problem_indices = [
+        index for index in deck_indices
+        if is_problematic(cards[index])
+    ]
 
     back_col, title_col = st.columns([1, 4])
     with back_col:
@@ -1267,11 +1429,19 @@ def render_review_panel() -> None:
             set_workspace_mode("Vista del mazo")
             st.rerun(scope="fragment")
     with title_col:
-        st.subheader("3. Editar versiones")
+        st.subheader(
+            f"Editar versiones · Mazo {deck_position + 1}: "
+            f"{summary['name']}"
+        )
 
     with st.expander("Ver tabla completa", expanded=False):
         st.dataframe(
-            pd.DataFrame([review_row(index, card) for index, card in enumerate(cards)]),
+            pd.DataFrame(
+                [
+                    review_row(index, cards[index])
+                    for index in deck_indices
+                ]
+            ),
             width="stretch",
             hide_index=True,
         )
@@ -1281,7 +1451,9 @@ def render_review_panel() -> None:
         value=bool(problem_indices),
         key="review_only_problematic",
     )
-    review_indices = problem_indices if only_problematic else list(range(len(cards)))
+    review_indices = (
+        problem_indices if only_problematic else deck_indices
+    )
     if not review_indices:
         st.success("No quedan cartas problemáticas.")
         return
@@ -1301,6 +1473,16 @@ def render_review_panel() -> None:
         key=f"review_selector_{selector_version}",
     )
     st.session_state["review_selected_index"] = selected_index
+    deck_config = deck_config_for_card_index(selected_index)
+    preferred_image_source = deck_config["preferred_image_source"]
+    preferred_language = deck_config["preferred_language"]
+    allow_language_fallback = deck_config[
+        "allow_language_fallback"
+    ]
+    resolution_mode = deck_config["resolution_mode"]
+    quality_mode = deck_config["quality_mode"]
+    image_quality = deck_config["image_quality"]
+
     position = review_indices.index(selected_index)
     st.progress(
         (position + 1) / len(review_indices),
@@ -1330,6 +1512,10 @@ def render_review_panel() -> None:
             st.rerun(scope="fragment")
 
     selected = cards[selected_index]
+    st.caption(
+        "Solo estás editando cartas de este mazo. Las selecciones de "
+        "los demás mazos permanecen intactas."
+    )
     selected_col, alternatives_col = st.columns([1, 2])
     with selected_col:
         st.markdown("#### Versión seleccionada")
@@ -1453,9 +1639,7 @@ def render_review_panel() -> None:
                     with st.spinner("Cargando impresiones oficiales..."):
                         with ScryfallClient(
                             cache_dir(),
-                            image_quality=st.session_state[
-                                "analysis_image_quality"
-                            ],
+                            image_quality=image_quality,
                         ) as client:
                             cache[cache_key] = client.search_alternatives(
                                 selected.source.name,
@@ -1481,9 +1665,7 @@ def render_review_panel() -> None:
                         st.caption(candidate_label(candidate))
                         with ScryfallClient(
                             cache_dir(),
-                            image_quality=st.session_state[
-                                "analysis_image_quality"
-                            ],
+                            image_quality=image_quality,
                         ) as client:
                             replacement = client.resolve_from_candidate(
                                 selected.source,
@@ -1630,6 +1812,101 @@ def render_review_panel() -> None:
                 st.warning(f"MPCFill no está disponible: {exc}")
 
 
+def mark_active_deck_reviewed() -> None:
+    reviewed = {
+        int(value)
+        for value in st.session_state.get("reviewed_decks", [])
+    }
+    reviewed.add(active_deck_position())
+    st.session_state["reviewed_decks"] = sorted(reviewed)
+
+
+def render_deck_review_navigation(
+    *,
+    location: str,
+    show_selector: bool,
+) -> None:
+    summaries = stored_deck_summaries()
+    position = active_deck_position()
+    total = len(summaries)
+    reviewed = {
+        int(value)
+        for value in st.session_state.get("reviewed_decks", [])
+    }
+
+    if show_selector:
+        st.progress(
+            (position + 1) / max(total, 1),
+            text=f"Revisión del mazo {position + 1} de {total}",
+        )
+        selector_version = st.session_state.get(
+            "active_deck_selector_version",
+            0,
+        )
+        selected_position = st.selectbox(
+            "Mazo en revisión",
+            options=list(range(total)),
+            index=position,
+            format_func=lambda item: (
+                f"{'✅ ' if item in reviewed else ''}"
+                f"{item + 1}. {summaries[item]['name']} · "
+                f"{deck_settings_label(deck_config_for_position(item))}"
+            ),
+            key=f"active_deck_selector_{location}_{selector_version}",
+        )
+        if selected_position != position:
+            set_active_deck(selected_position)
+            st.session_state["active_deck_selector_version"] = (
+                selector_version + 1
+            )
+            st.rerun()
+
+    columns = st.columns([1, 1.4, 1.4])
+    with columns[0]:
+        if st.button(
+            "← Lista y opciones",
+            key=f"step2_back_{location}",
+            width="stretch",
+        ):
+            st.session_state["app_step"] = 1
+            st.rerun()
+
+    with columns[1]:
+        if st.button(
+            "← Mazo anterior",
+            key=f"previous_deck_{location}",
+            disabled=position == 0,
+            width="stretch",
+        ):
+            mark_active_deck_reviewed()
+            set_active_deck(position - 1)
+            st.rerun()
+
+    with columns[2]:
+        if position < total - 1:
+            if st.button(
+                "Marcar revisado y abrir siguiente →",
+                key=f"next_deck_{location}",
+                type="primary",
+                width="stretch",
+            ):
+                mark_active_deck_reviewed()
+                set_active_deck(position + 1)
+                st.rerun()
+        else:
+            if st.button(
+                "Finalizar revisión y exportar →",
+                key=f"export_after_review_{location}",
+                type="primary",
+                width="stretch",
+            ):
+                mark_active_deck_reviewed()
+                st.session_state["app_step"] = 3
+                st.rerun()
+
+
+
+
 @st.fragment
 def render_workspace() -> None:
     options = ["Vista del mazo", "Editar cartas"]
@@ -1702,8 +1979,9 @@ def render_export_panel() -> None:
             for summary in deck_summaries:
                 st.write(
                     f"**{summary['index']}. {summary['name']}** — "
-                    f"{summary['copies']} cartas, "
-                    f"{summary['sheet_count']} hojas si se imprime por separado"
+                    f"{summary['copies']} cartas · "
+                    f"{deck_settings_label(summary.get('settings', {}))} · "
+                    f"{summary['sheet_count']} hojas por separado"
                 )
 
         saved_sheets = int(multi_deck_stats.get("saved_sheets", 0))
@@ -1827,7 +2105,9 @@ def render_export_panel() -> None:
         [summary["name"] for summary in deck_summaries],
         cards,
     )
-    pdf_image_quality = st.session_state["analysis_image_quality"]
+    pdf_image_quality = deck_config_for_position(0)[
+        "image_quality"
+    ]
     pdf_output_signature = hashlib.sha256(
         json.dumps(
             {
@@ -2061,7 +2341,9 @@ def render_export_panel() -> None:
         try:
             with ScryfallClient(
                 cache_dir(),
-                image_quality=st.session_state["analysis_image_quality"],
+                image_quality=deck_config_for_position(0)[
+                    "image_quality"
+                ],
             ) as client:
                 data, report = build_zip(
                     cards,
@@ -2119,48 +2401,19 @@ def render_export_panel() -> None:
 
 
 if app_step == 2 and signature_matches:
-    top_navigation = st.columns([1, 2, 1])
-    with top_navigation[0]:
-        if st.button(
-            "← Lista y opciones",
-            key="step2_back_top",
-            width="stretch",
-        ):
-            st.session_state["app_step"] = 1
-            st.rerun()
-    with top_navigation[2]:
-        if st.button(
-            "Continuar a exportación →",
-            key="step2_next_top",
-            type="primary",
-            width="stretch",
-        ):
-            st.session_state["app_step"] = 3
-            st.rerun()
-
+    render_deck_review_navigation(
+        location="top",
+        show_selector=True,
+    )
     st.caption(
-        "Volver al paso 1 no elimina el análisis ni las versiones elegidas."
+        "Cada mazo conserva su propia configuración y sus propias "
+        "correcciones. Cambiar de mazo no modifica el resto."
     )
     render_workspace()
-
-    bottom_navigation = st.columns([1, 2, 1])
-    with bottom_navigation[0]:
-        if st.button(
-            "← Lista y opciones",
-            key="step2_back_bottom",
-            width="stretch",
-        ):
-            st.session_state["app_step"] = 1
-            st.rerun()
-    with bottom_navigation[2]:
-        if st.button(
-            "Continuar a exportación →",
-            key="step2_next_bottom",
-            type="primary",
-            width="stretch",
-        ):
-            st.session_state["app_step"] = 3
-            st.rerun()
+    render_deck_review_navigation(
+        location="bottom",
+        show_selector=False,
+    )
 
 elif app_step == 3 and signature_matches:
     navigation = st.columns([1, 3])

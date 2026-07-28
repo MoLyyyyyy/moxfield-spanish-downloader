@@ -1,13 +1,20 @@
 Proxy Maker
-Build: 2026.07.28-multideck-v1
+Build: 2026.07.28-per-deck-workflow-v2
 Fecha: 2026-07-28
 
-Incluye:
-- Soporte para 1-12 mazos en una sola generación.
-- Los mazos se colocan uno detrás de otro sin saltos de hoja.
-- Aviso y cálculo de huecos pagados.
-- División automática de PDFs superiores a 200 MB.
-- Descarga única en ZIP cuando el PDF se divide.
+Flujo multimazo por mazo:
+- Entre 1 y 12 mazos.
+- Lista y configuración independiente para cada mazo.
+- Fuente independiente: Scryfall o MPCFill.
+- Idioma principal y respaldo independientes.
+- Política de edición, calidad y formato independientes.
+- Sideboard y maybeboard configurables por mazo.
+- Análisis secuencial, sin mezclar resultados.
+- Galería, edición manual y acciones masivas limitadas al mazo activo.
+- Selector y navegación Mazo anterior / Mazo siguiente.
+- Las cartas solo se concatenan al crear el PDF final.
 
 Comprobación rápida:
-Busca "Número de mazos" en app.py.
+- Busca "per-deck-workflow-v2" en app.py.
+- Busca "Mazo en revisión" en app.py.
+- Busca mtg_downloader/deck_workflow.py.
