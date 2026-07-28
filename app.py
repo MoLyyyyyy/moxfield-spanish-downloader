@@ -11,7 +11,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from mtg_downloader.archive import build_zip, cache_stats, prefetch_cards
+from mtg_downloader.archive import build_zip, cache_stats
 from mtg_downloader.backs import standard_magic_back
 from mtg_downloader.deck_view import (
     filtered_indices,
@@ -29,11 +29,6 @@ from mtg_downloader.mpcfill import (
     mpc_candidate_label,
 )
 from mtg_downloader.pdf_export import PdfProgress, build_a4_pdf
-from mtg_downloader.persistence import (
-    SelectionConfigError,
-    export_selection_config,
-    import_selection_config,
-)
 from mtg_downloader.profile_resolution import resolve_with_language_fallback
 from mtg_downloader.review import (
     candidate_key,
@@ -169,18 +164,6 @@ varias ilustraciones durante el paso de revisión.
         )
         preferred_language = language_labels[language_label]
 
-        fallback_label = (
-            "Usar inglés como respaldo cuando no haya una imagen válida"
-            if preferred_language == "es"
-            else "Usar español como respaldo cuando no haya una imagen válida"
-        )
-        allow_language_fallback = st.checkbox(
-            fallback_label,
-            value=bool(
-                saved_config.get("allow_language_fallback", True)
-            ),
-        )
-
         resolution_labels = {
             "Respetar la edición indicada primero": "exact_first",
             "Usar únicamente la edición indicada": "exact_only",
@@ -235,6 +218,18 @@ varias ilustraciones durante el paso de revisión.
 
         image_quality = str(saved_config.get("image_quality", "png"))
         with st.expander("Opciones avanzadas", expanded=False):
+            fallback_label = (
+                "Usar inglés como respaldo si falta una imagen válida"
+                if preferred_language == "es"
+                else "Usar español como respaldo si falta una imagen válida"
+            )
+            allow_language_fallback = st.checkbox(
+                fallback_label,
+                value=bool(
+                    saved_config.get("allow_language_fallback", True)
+                ),
+            )
+
             image_quality_label = st.selectbox(
                 "Formato de imagen",
                 [
@@ -249,14 +244,21 @@ varias ilustraciones durante el paso de revisión.
                 else "large"
             )
 
-        include_sideboard = st.checkbox(
-            "Incluir sideboard",
-            value=bool(saved_config.get("include_sideboard", False)),
-        )
-        include_maybeboard = st.checkbox(
-            "Incluir maybeboard",
-            value=bool(saved_config.get("include_maybeboard", False)),
-        )
+            board_options = st.columns(2)
+            with board_options[0]:
+                include_sideboard = st.checkbox(
+                    "Incluir sideboard",
+                    value=bool(
+                        saved_config.get("include_sideboard", False)
+                    ),
+                )
+            with board_options[1]:
+                include_maybeboard = st.checkbox(
+                    "Incluir maybeboard",
+                    value=bool(
+                        saved_config.get("include_maybeboard", False)
+                    ),
+                )
 
     analysis_submitted = st.button(
         "Analizar mazo",
@@ -702,41 +704,6 @@ if app_step == 1 and analysis_ready:
         st.rerun()
 
 
-def render_persistence_panel() -> None:
-    cards: list[ResolvedCard] = st.session_state["resolved_cards"]
-    with st.expander("💾 Guardar o restaurar elecciones", expanded=False):
-        config = export_selection_config(
-            cards,
-            deck_signature=st.session_state["analysis_signature"],
-        )
-        st.download_button(
-            "Descargar elecciones JSON",
-            data=config,
-            file_name="elecciones_mazo.json",
-            mime="application/json",
-            use_container_width=True,
-        )
-        import_text = st.text_area(
-            "Pegar elecciones guardadas",
-            key="selection_config_import",
-            height=120,
-            placeholder="Pega aquí el contenido de elecciones_mazo.json",
-        )
-        if st.button("Aplicar elecciones guardadas", use_container_width=True):
-            try:
-                restored, warnings = import_selection_config(import_text, cards)
-                restored = enforce_automatic_mpcfill_crop_list(restored)
-                st.session_state["resolved_cards"] = restored
-                clear_generated_output()
-                if warnings:
-                    st.warning(" ".join(warnings))
-                else:
-                    st.success("Elecciones restauradas correctamente.")
-                st.rerun(scope="fragment")
-            except SelectionConfigError as exc:
-                st.error(str(exc))
-
-
 def render_bulk_panel(filtered: list[int]) -> None:
     cards: list[ResolvedCard] = st.session_state["resolved_cards"]
     with st.expander("⚙️ Edición masiva", expanded=False):
@@ -775,8 +742,10 @@ def render_gallery_grouped_section(
     cards: list[ResolvedCard],
     mpc_client: MpcFillClient | None,
 ) -> None:
-    st.markdown(f"## {title}")
-    st.caption(description)
+    if title:
+        st.markdown(f"## {title}")
+    if description:
+        st.caption(description)
 
     filtered_cards = [cards[index] for index in section_indices]
     for category in group_deck(filtered_cards, indices=section_indices):
@@ -803,7 +772,7 @@ def render_gallery_grouped_section(
                         st.caption(gallery_status_label(card))
                         st.caption(gallery_printing_label(card))
                         if st.button(
-                            "✏️ Editar",
+                            "Cambiar versión",
                             key=f"gallery_edit_{index}",
                             use_container_width=True,
                         ):
@@ -835,26 +804,6 @@ def render_deck_gallery() -> None:
     metrics[3].metric("Varios artes", multiple_count)
     metrics[4].metric("Caché", f"{cached}/{total_cache}")
 
-    if st.button("Preparar todas las imágenes ahora", use_container_width=True):
-        progress = st.progress(0.0)
-        status = st.empty()
-        with ScryfallClient(
-            cache_dir(),
-            image_quality=st.session_state["analysis_image_quality"],
-        ) as client:
-            downloaded, total = prefetch_cards(
-                cards,
-                client,
-                progress_callback=lambda current, amount, name: (
-                    status.write(f"Preparando {current}/{amount}: **{name}**"),
-                    progress.progress(current / max(amount, 1)),
-                ),
-            )
-        status.success(
-            f"Preparación completada: {downloaded} nuevas; {total} imágenes únicas."
-        )
-
-    render_persistence_panel()
 
     filter_cols = st.columns([2.4, 1, 1.2, 1, 1.1])
     with filter_cols[0]:
@@ -914,14 +863,21 @@ def render_deck_gallery() -> None:
                 cards,
                 mpc_client,
             )
+        else:
+            st.success("No hay cartas con problemas.")
+
         if healthy_indices:
-            render_gallery_grouped_section(
-                "✅ Cartas correctas",
-                "Estas cartas ya están bien resueltas y solo se muestran después de las problemáticas.",
-                healthy_indices,
-                cards,
-                mpc_client,
-            )
+            with st.expander(
+                f"Ver {len(healthy_indices)} cartas correctas",
+                expanded=False,
+            ):
+                render_gallery_grouped_section(
+                    "",
+                    "",
+                    healthy_indices,
+                    cards,
+                    mpc_client,
+                )
     finally:
         if mpc_client:
             mpc_client.close()
@@ -1217,43 +1173,62 @@ def render_review_panel() -> None:
             key=f"version_source_{selected_index}",
         )
 
-        if source == "Oficiales · Scryfall":
-            filters = st.columns([1.7, 1.5, 1])
-            with filters[0]:
-                language_label = st.selectbox(
-                    "Idioma",
-                    [
-                        "Español e inglés",
-                        "Solo español",
-                        "Solo inglés",
-                    ],
-                    key=f"alt_lang_{selected_index}",
-                )
-            with filters[1]:
-                quality_label = st.selectbox(
-                    "Calidad",
-                    [
-                        "Solo alta resolución",
-                        "Todas las calidades",
-                    ],
-                    key=f"alt_quality_{selected_index}",
-                )
-            with filters[2]:
-                limit = st.selectbox(
-                    "Máximo",
-                    [6, 9, 12, 18],
-                    index=2,
-                    key=f"alt_limit_{selected_index}",
-                )
+        primary_language = (
+            preferred_language
+            if preferred_language in {"es", "en"}
+            else "es"
+        )
+        secondary_language = (
+            "en" if primary_language == "es" else "es"
+        )
+        inherited_language_label = (
+            "Español e inglés"
+            if allow_language_fallback
+            else (
+                "Solo español"
+                if primary_language == "es"
+                else "Solo inglés"
+            )
+        )
+        language_options = [
+            "Español e inglés",
+            "Solo español",
+            "Solo inglés",
+        ]
 
-            primary_language = (
-                preferred_language
-                if preferred_language in {"es", "en"}
-                else "es"
-            )
-            secondary_language = (
-                "en" if primary_language == "es" else "es"
-            )
+        if source == "Oficiales · Scryfall":
+            quality_options = [
+                "Preferir alta resolución",
+                "Solo alta resolución",
+                "Aceptar imágenes lowres",
+            ]
+            inherited_quality_label = {
+                "prefer_highres": "Preferir alta resolución",
+                "highres_only": "Solo alta resolución",
+                "allow_lowres": "Aceptar imágenes lowres",
+            }.get(quality_mode, "Preferir alta resolución")
+
+            with st.expander("Filtros", expanded=False):
+                filters = st.columns(2)
+                with filters[0]:
+                    language_label = st.selectbox(
+                        "Idioma",
+                        language_options,
+                        index=language_options.index(
+                            inherited_language_label
+                        ),
+                        key=f"alt_lang_{selected_index}",
+                    )
+                with filters[1]:
+                    quality_label = st.selectbox(
+                        "Calidad",
+                        quality_options,
+                        index=quality_options.index(
+                            inherited_quality_label
+                        ),
+                        key=f"alt_quality_{selected_index}",
+                    )
+
             languages = {
                 "Español e inglés": (
                     primary_language,
@@ -1263,9 +1238,14 @@ def render_review_panel() -> None:
                 "Solo inglés": ("en",),
             }[language_label]
             highres_only = quality_label == "Solo alta resolución"
+            visible_key = (
+                f"alt_visible_{selected_index}_{languages}_"
+                f"{quality_label}"
+            )
+            visible_limit = int(st.session_state.get(visible_key, 12))
             cache_key = (
                 f"{selected_index}|{languages}|"
-                f"{highres_only}|{limit}"
+                f"{highres_only}|{visible_limit}"
             )
             cache = st.session_state.setdefault("alternatives", {})
             if cache_key not in cache:
@@ -1273,13 +1253,15 @@ def render_review_panel() -> None:
                     with st.spinner("Cargando impresiones oficiales..."):
                         with ScryfallClient(
                             cache_dir(),
-                            image_quality=st.session_state["analysis_image_quality"],
+                            image_quality=st.session_state[
+                                "analysis_image_quality"
+                            ],
                         ) as client:
                             cache[cache_key] = client.search_alternatives(
                                 selected.source.name,
                                 languages=languages,
                                 highres_only=highres_only,
-                                max_results=limit,
+                                max_results=visible_limit,
                             )
                 except (ScryfallError, OSError) as exc:
                     st.error(str(exc))
@@ -1299,7 +1281,9 @@ def render_review_panel() -> None:
                         st.caption(candidate_label(candidate))
                         with ScryfallClient(
                             cache_dir(),
-                            image_quality=st.session_state["analysis_image_quality"],
+                            image_quality=st.session_state[
+                                "analysis_image_quality"
+                            ],
                         ) as client:
                             replacement = client.resolve_from_candidate(
                                 selected.source,
@@ -1310,43 +1294,60 @@ def render_review_panel() -> None:
                             selected_index,
                             replacement,
                             review_indices,
-                            f"scryfall_{selected_index}_{candidate_key(candidate)}",
+                            f"scryfall_{selected_index}_"
+                            f"{candidate_key(candidate)}",
                         )
 
+            if len(alternatives) >= visible_limit and visible_limit < 48:
+                if st.button(
+                    "Mostrar 12 más",
+                    key=f"show_more_scryfall_{selected_index}",
+                    use_container_width=True,
+                ):
+                    st.session_state[visible_key] = visible_limit + 12
+                    st.rerun(scope="fragment")
+
         else:
-            filters = st.columns([1.5, 1.5, 1])
-            with filters[0]:
-                language_label = st.selectbox(
-                    "Idioma",
-                    [
-                        "Español e inglés",
-                        "Solo español",
-                        "Solo inglés",
-                    ],
-                    key=f"mpc_lang_{selected_index}",
-                )
-            with filters[1]:
-                minimum_dpi = st.selectbox(
-                    "DPI mínimo",
-                    [300, 600, 800, 1200],
-                    key=f"mpc_dpi_{selected_index}",
-                )
-            with filters[2]:
-                limit = st.selectbox(
-                    "Máximo",
-                    [6, 9, 12],
-                    index=1,
-                    key=f"mpc_limit_{selected_index}",
-                )
-            st.caption(
-                "Las miniaturas de MPCFill se recortan automáticamente. Si la imagen no es de MPCFill, no se recorta."
-            )
+            inherited_dpi = {
+                "allow_lowres": 300,
+                "prefer_highres": 600,
+                "highres_only": 800,
+            }.get(quality_mode, 600)
+            dpi_options = [300, 600, 800, 1200]
+
+            with st.expander("Filtros", expanded=False):
+                filters = st.columns(2)
+                with filters[0]:
+                    language_label = st.selectbox(
+                        "Idioma",
+                        language_options,
+                        index=language_options.index(
+                            inherited_language_label
+                        ),
+                        key=f"mpc_lang_{selected_index}",
+                    )
+                with filters[1]:
+                    minimum_dpi = st.selectbox(
+                        "DPI mínimo",
+                        dpi_options,
+                        index=dpi_options.index(inherited_dpi),
+                        key=f"mpc_dpi_{selected_index}",
+                    )
+
             languages = {
                 "Español e inglés": ("ES", "EN"),
                 "Solo español": ("ES",),
                 "Solo inglés": ("EN",),
             }[language_label]
-            cache_key = f"{selected_index}|{languages}|{minimum_dpi}|{limit}"
+            visible_key = (
+                f"mpc_visible_{selected_index}_{languages}_"
+                f"{minimum_dpi}"
+            )
+            visible_limit = int(st.session_state.get(visible_key, 12))
+            cache_key = (
+                f"{selected_index}|{languages}|"
+                f"{minimum_dpi}|{visible_limit}"
+            )
             cache = st.session_state.setdefault("mpc_alternatives", {})
             try:
                 with MpcFillClient(mpc_cache_dir()) as client:
@@ -1356,11 +1357,13 @@ def render_review_panel() -> None:
                                 selected.source.name,
                                 languages=languages,
                                 minimum_dpi=minimum_dpi,
-                                max_results=limit,
+                                max_results=visible_limit,
                             )
                     designs = cache.get(cache_key, [])
                     if not designs:
-                        st.info("MPCFill no encontró diseños con esos filtros.")
+                        st.info(
+                            "MPCFill no encontró diseños con esos filtros."
+                        )
                     columns = st.columns(3)
                     for design_index, candidate in enumerate(designs):
                         with columns[design_index % 3]:
@@ -1370,7 +1373,9 @@ def render_review_panel() -> None:
                                         candidate,
                                         crop_mode=CROP_AUTO,
                                     )
-                                    _, image_column, _ = st.columns([1, 2, 1])
+                                    _, image_column, _ = st.columns(
+                                        [1, 2, 1]
+                                    )
                                     with image_column:
                                         st.image(preview, width=135)
                                 except MpcFillError as exc:
@@ -1386,8 +1391,20 @@ def render_review_panel() -> None:
                                     selected_index,
                                     replacement,
                                     review_indices,
-                                    f"mpc_{selected_index}_{mpc_candidate_key(candidate)}_auto",
+                                    f"mpc_{selected_index}_"
+                                    f"{mpc_candidate_key(candidate)}_auto",
                                 )
+
+                    if len(designs) >= visible_limit and visible_limit < 48:
+                        if st.button(
+                            "Mostrar 12 más",
+                            key=f"show_more_mpc_{selected_index}",
+                            use_container_width=True,
+                        ):
+                            st.session_state[visible_key] = (
+                                visible_limit + 12
+                            )
+                            st.rerun(scope="fragment")
             except MpcFillError as exc:
                 st.warning(f"MPCFill no está disponible: {exc}")
 
@@ -1415,91 +1432,17 @@ def render_workspace() -> None:
 
 def render_export_panel() -> None:
     cards: list[ResolvedCard] = st.session_state["resolved_cards"]
-    st.subheader("4. Validar y exportar")
-    export_format = st.selectbox(
-        "Formato de salida",
-        [
-            "ZIP de imágenes individuales",
-            "Paquete MPC / dúplex",
-            "PDF A4 — 9 cartas por página",
-        ],
-        index=2,
-    )
+    st.subheader("3. Validar y exportar")
+
     cut_lines = True
     cut_line_style = "ticks"
     cut_line_width = 1.0
     cut_line_color = "#000000"
     cut_line_over_cards = False
     printer_marks = True
-
-    options = st.columns(2)
-    with options[0]:
-        naming_mode = st.selectbox(
-            "Organización de nombres",
-            ["Por categoría", "Por posición del mazo"],
-            disabled=export_format == "PDF A4 — 9 cartas por página",
-        )
-    with options[1]:
-        cut_lines = st.checkbox(
-            "Añadir marcas de corte",
-            value=True,
-            disabled=export_format != "PDF A4 — 9 cartas por página",
-        )
-
-    if export_format == "PDF A4 — 9 cartas por página":
-        st.info(
-            "Perfil exacto de MPCFillToPDF: A4 3×3, cartas de "
-            "63,5 × 88,9 mm, sangrado espejo de 1 mm, páginas 1/1B "
-            "y marcas de imprenta."
-        )
-        with st.expander(
-            "Ajustes del PDF de imprenta",
-            expanded=False,
-        ):
-            style_label = st.selectbox(
-                "Tipo de líneas de corte",
-                [
-                    "Marcas cortas en los márgenes — recomendado",
-                    "Líneas completas para corte manual",
-                ],
-            )
-            cut_line_style = (
-                "ticks"
-                if style_label.startswith("Marcas cortas")
-                else "full"
-            )
-            cut_line_width = st.number_input(
-                "Grosor de las líneas (pt)",
-                min_value=0.1,
-                max_value=10.0,
-                value=1.0,
-                step=0.1,
-            )
-            cut_line_color = st.color_picker(
-                "Color de las líneas",
-                value="#000000",
-            )
-            st.caption(
-                "Las marcas de registro y la barra CMYK son las imágenes "
-                "originales de MPCFillToPDF y se incluyen siempre en este perfil."
-            )
-            printer_marks = True
-            cut_line_over_cards = st.checkbox(
-                "Dibujar las líneas por encima de las cartas",
-                value=False,
-                help=(
-                    "Déjalo desactivado para el comportamiento estándar "
-                    "de imprenta de MPCFillToPDF."
-                ),
-            )
-
     back_spec = standard_magic_back()
-    st.caption(
-        "Reverso estándar de Magic aplicado siempre a las cartas "
-        "de una sola cara."
-    )
-
     include_backs = True
+
     validation = validate_deck(cards, back_spec=back_spec)
     metrics = st.columns(6)
     metrics[0].metric("Copias", validation.expected_cards)
@@ -1539,13 +1482,94 @@ def render_export_panel() -> None:
     override_errors = False
     if validation.errors:
         override_errors = st.checkbox("Generar aunque falten imágenes")
+    generation_disabled = bool(validation.errors) and not override_errors
 
-    if st.button(
-        "Generar salida",
+    st.info(
+        "PDF A4 3×3 con cartas de 63,5 × 88,9 mm, "
+        "sangrado espejo de 1 mm, páginas 1/1B y marcas de imprenta."
+    )
+    with st.expander("Ajustes del PDF", expanded=False):
+        cut_lines = st.checkbox(
+            "Añadir marcas de corte",
+            value=True,
+        )
+        style_label = st.selectbox(
+            "Tipo de líneas de corte",
+            [
+                "Marcas cortas en los márgenes — recomendado",
+                "Líneas completas para corte manual",
+            ],
+        )
+        cut_line_style = (
+            "ticks"
+            if style_label.startswith("Marcas cortas")
+            else "full"
+        )
+        cut_line_width = st.number_input(
+            "Grosor de las líneas (pt)",
+            min_value=0.1,
+            max_value=10.0,
+            value=1.0,
+            step=0.1,
+        )
+        cut_line_color = st.color_picker(
+            "Color de las líneas",
+            value="#000000",
+        )
+        st.caption(
+            "Las marcas de registro y la barra CMYK originales de "
+            "MPCFillToPDF se incluyen siempre."
+        )
+        cut_line_over_cards = st.checkbox(
+            "Dibujar las líneas por encima de las cartas",
+            value=False,
+            help=(
+                "Déjalo desactivado para el comportamiento estándar "
+                "de imprenta de MPCFillToPDF."
+            ),
+        )
+
+    pdf_requested = st.button(
+        "Generar PDF A4",
         type="primary",
         use_container_width=True,
-        disabled=bool(validation.errors) and not override_errors,
-    ):
+        disabled=generation_disabled,
+    )
+    st.caption(
+        "Las imágenes necesarias se descargan automáticamente al generar."
+    )
+
+    images_requested = False
+    mpc_requested = False
+    naming_mode = "Por categoría"
+    with st.expander("Otros formatos", expanded=False):
+        naming_mode = st.selectbox(
+            "Organización de nombres",
+            ["Por categoría", "Por posición del mazo"],
+        )
+        other_columns = st.columns(2)
+        with other_columns[0]:
+            images_requested = st.button(
+                "Generar ZIP de imágenes",
+                use_container_width=True,
+                disabled=generation_disabled,
+            )
+        with other_columns[1]:
+            mpc_requested = st.button(
+                "Generar paquete MPC / dúplex",
+                use_container_width=True,
+                disabled=generation_disabled,
+            )
+
+    requested_format: str | None = None
+    if pdf_requested:
+        requested_format = "pdf"
+    elif images_requested:
+        requested_format = "images"
+    elif mpc_requested:
+        requested_format = "mpc"
+
+    if requested_format:
         progress = st.progress(0.0)
         status = st.empty()
         try:
@@ -1553,7 +1577,7 @@ def render_export_panel() -> None:
                 cache_dir(),
                 image_quality=st.session_state["analysis_image_quality"],
             ) as client:
-                if export_format == "PDF A4 — 9 cartas por página":
+                if requested_format == "pdf":
                     started_at = time.monotonic()
 
                     def update_pdf_progress(event: PdfProgress) -> None:
@@ -1621,17 +1645,14 @@ def render_export_panel() -> None:
                         f"{result.cards} cartas."
                     )
                 else:
-                    package_mode = (
-                        "mpc"
-                        if export_format == "Paquete MPC / dúplex"
-                        else "images"
-                    )
                     data, report = build_zip(
                         cards,
                         client,
                         duplicate_copies=True,
                         progress_callback=lambda current, total, name: (
-                            status.write(f"Añadiendo {current}/{total}: **{name}**"),
+                            status.write(
+                                f"Añadiendo {current}/{total}: **{name}**"
+                            ),
                             progress.progress(current / max(total, 1)),
                         ),
                         back_spec=back_spec,
@@ -1641,11 +1662,11 @@ def render_export_panel() -> None:
                             if naming_mode == "Por categoría"
                             else "sequence"
                         ),
-                        package_mode=package_mode,
+                        package_mode=requested_format,
                     )
                     name = (
                         "mazo_paquete_mpc.zip"
-                        if package_mode == "mpc"
+                        if requested_format == "mpc"
                         else "mazo_cartas.zip"
                     )
                     mime = "application/zip"
@@ -1671,7 +1692,11 @@ def render_export_panel() -> None:
         report = st.session_state.get("report") or []
         if report:
             with st.expander("Informe final", expanded=False):
-                st.dataframe(pd.DataFrame(report), use_container_width=True, hide_index=True)
+                st.dataframe(
+                    pd.DataFrame(report),
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
 
 if app_step == 2 and signature_matches:

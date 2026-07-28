@@ -358,3 +358,19 @@ El editor de cada carta utiliza desplegables coherentes para Scryfall y
 MPCFill. El idioma puede limitarse a español, inglés o ambos. En Scryfall la
 calidad también se selecciona mediante un desplegable entre alta resolución y
 todas las calidades.
+
+
+## Flujo simplificado
+
+- El paso 1 deja visibles únicamente idioma, edición y calidad. El idioma de
+  respaldo, el formato de imagen, sideboard y maybeboard están en opciones
+  avanzadas.
+- Las cartas con problemas se muestran primero; las correctas permanecen
+  plegadas hasta abrir **Ver cartas correctas**.
+- Las versiones alternativas heredan idioma y calidad. Sus filtros están
+  plegados y los resultados crecen de doce en doce mediante **Mostrar 12 más**.
+- **Generar PDF A4** es la acción principal. Los ZIP están dentro de
+  **Otros formatos**.
+- Se retiraron **Preparar todas las imágenes ahora** y el guardado/restauración
+  manual de elecciones. Las imágenes se descargan durante la generación y las
+  elecciones se conservan automáticamente en la sesión activa.

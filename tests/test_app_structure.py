@@ -16,7 +16,7 @@ def test_app_has_visual_deck_and_editor() -> None:
     assert "Analizar mazo" in app
     assert "Vista del mazo" in app
     assert "Editar versiones" in app
-    assert "✏️ Editar" in app
+    assert "Cambiar versión" in app
     assert "Mantener actual y continuar" in app
     assert "Elegir y continuar" in app
 
@@ -65,11 +65,11 @@ def test_multiple_art_distribution_exists() -> None:
     assert "set_allocation_quantities" in app
 
 
-def test_persistence_and_bulk_editing_exist() -> None:
+def test_bulk_editing_remains_without_manual_persistence_panel() -> None:
     app = app_text()
-    assert "Guardar o restaurar elecciones" in app
-    assert "Descargar elecciones JSON" in app
-    assert "Aplicar elecciones guardadas" in app
+    assert "Guardar o restaurar elecciones" not in app
+    assert "Descargar elecciones JSON" not in app
+    assert "Aplicar elecciones guardadas" not in app
     assert "Edición masiva" in app
     assert "Aplicar acción masiva" in app
     assert "Primer diseño MPCFill de mayor DPI" in app
@@ -81,34 +81,34 @@ def test_gallery_filters_and_statuses_exist() -> None:
     assert "filtered_indices(" in app
     assert "Múltiples artes" in app
     assert "Baja resolución" in app
-    assert "Preparar todas las imágenes ahora" in app
+    assert "Preparar todas las imágenes ahora" not in app
+    assert "se descargan automáticamente al generar" in app
     assert "cache_stats(" in app
 
 
-def test_validation_backs_and_export_profiles_exist() -> None:
+def test_validation_and_simplified_export_actions_exist() -> None:
     app = app_text()
     assert "Validar y exportar" in app
-    assert "ZIP de imágenes individuales" in app
-    assert "Paquete MPC / dúplex" in app
-    assert "PDF A4 — 9 cartas por página" in app
-    assert "Reverso estándar de Magic" in app
+    assert "Generar PDF A4" in app
+    assert "Otros formatos" in app
+    assert "Generar ZIP de imágenes" in app
+    assert "Generar paquete MPC / dúplex" in app
+    assert "Formato de salida" not in app
     assert "back_spec = standard_magic_back()" in app
-    assert "Reverso neutro" not in app
-    assert "URL personalizada" not in app
-    assert "Diseño MPCFill" not in app
     assert "validate_deck(" in app
 
 
 def test_output_can_be_generated_despite_errors_only_by_override() -> None:
     app = app_text()
     assert "Generar aunque falten imágenes" in app
-    assert "disabled=bool(validation.errors) and not override_errors" in app
+    assert "generation_disabled = bool(validation.errors) and not override_errors" in app
+    assert "disabled=generation_disabled" in app
 
 
 
 def test_pdf_matches_mpcfilltopdf_profile() -> None:
     app = app_text()
-    assert "Perfil exacto de MPCFillToPDF" in app
+    assert "PDF A4 3×3" in app
     assert "63,5 × 88,9 mm" in app
     assert "sangrado espejo de 1 mm" in app
     assert "Marcas cortas en los márgenes" in app
@@ -121,9 +121,9 @@ def test_pdf_matches_mpcfilltopdf_profile() -> None:
 
 def test_exact_mpcfilltopdf_assets_are_mandatory() -> None:
     app = app_text()
-    assert "Perfil exacto de MPCFillToPDF" in app
-    assert "Las marcas de registro y la barra CMYK son las imágenes " in app
-    assert "originales de MPCFillToPDF" in app
+    assert "PDF A4 3×3" in app
+    assert "Las marcas de registro y la barra CMYK originales de " in app
+    assert "MPCFillToPDF se incluyen siempre" in app
     assert "printer_marks = True" in app
 
 
@@ -144,11 +144,11 @@ def test_problematic_cards_are_grouped_first_in_gallery() -> None:
     app = app_text()
     assert "def render_gallery_grouped_section(" in app
     assert "⚠️ Cartas con problemas" in app
-    assert "✅ Cartas correctas" in app
+    assert "Ver {len(healthy_indices)} cartas correctas" in app
     assert "problematic_indices = [" in app
     assert "healthy_indices = [" in app
     assert "Estas cartas necesitan revisión" in app
-    assert "Estas cartas ya están bien resueltas" in app
+    assert "Ver {len(healthy_indices)} cartas correctas" in app
 
 
 
@@ -199,26 +199,19 @@ def test_magic_back_is_always_used_without_selector() -> None:
     app = app_text()
     assert "back_spec = standard_magic_back()" in app
     assert "include_backs = True" in app
-    assert "Reverso estándar de Magic aplicado siempre" in app
+    assert "Reverso estándar de Magic aplicado siempre" not in app
     assert "def render_back_selector" not in app
     assert "Configurar reversos" not in app
     assert "Reverso para cartas de una sola cara" not in app
 
 
 
-def test_pdf_is_the_default_export_format() -> None:
+def test_pdf_is_the_primary_export_action() -> None:
     app = app_text()
-    expected = """export_format = st.selectbox(
-        "Formato de salida",
-        [
-            "ZIP de imágenes individuales",
-            "Paquete MPC / dúplex",
-            "PDF A4 — 9 cartas por página",
-        ],
-        index=2,
-    )"""
-    assert expected in app
-
+    assert '"Generar PDF A4"' in app
+    assert 'type="primary"' in app
+    assert 'with st.expander("Otros formatos"' in app
+    assert 'export_format = st.selectbox(' not in app
 
 
 def test_decklist_placeholder_uses_real_line_breaks() -> None:
@@ -261,14 +254,27 @@ def test_step_two_can_return_without_losing_analysis() -> None:
 
 
 
-def test_alternative_language_filters_use_selectboxes() -> None:
+def test_alternative_filters_are_inherited_and_collapsed() -> None:
     app = app_text()
-    assert '"Español e inglés"' in app
-    assert '"Solo español"' in app
-    assert '"Solo inglés"' in app
-    assert 'key=f"alt_lang_{selected_index}"' in app
-    assert 'key=f"alt_quality_{selected_index}"' in app
-    assert '"Incluir inglés"' not in app
-    assert 'key=f"alt_en_{selected_index}"' not in app
-    assert 'quality_label == "Solo alta resolución"' in app
-    assert 'languages = {' in app
+    assert 'with st.expander("Filtros", expanded=False)' in app
+    assert 'inherited_language_label' in app
+    assert 'inherited_quality_label' in app
+    assert '"Mostrar 12 más"' in app
+    assert 'key=f"alt_limit_{selected_index}"' not in app
+    assert 'key=f"mpc_limit_{selected_index}"' not in app
+
+
+def test_step_one_only_shows_core_search_options() -> None:
+    app = app_text()
+    advanced = app.index('with st.expander("Opciones avanzadas"')
+    assert app.index('fallback_label =', advanced) > advanced
+    assert app.index('"Formato de imagen"', advanced) > advanced
+    assert app.index('"Incluir sideboard"', advanced) > advanced
+    assert app.index('"Incluir maybeboard"', advanced) > advanced
+
+
+def test_healthy_cards_are_collapsed() -> None:
+    app = app_text()
+    assert 'f"Ver {len(healthy_indices)} cartas correctas"' in app
+    assert 'expanded=False' in app
+    assert 'st.success("No hay cartas con problemas.")' in app
