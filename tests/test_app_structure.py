@@ -425,7 +425,7 @@ def test_multiple_decks_fill_pages_continuously() -> None:
 
 def test_build_version_identifies_multideck_download() -> None:
     app = app_text()
-    assert 'BUILD_VERSION = "2026.07.28-workflow-v5"' in app
+    assert 'BUILD_VERSION = "2026.07.28-workflow-v5.1-import-hotfix"' in app
     assert '"Número de mazos"' in app
 
 

@@ -1,5 +1,5 @@
 Proxy Maker
-Build: 2026.07.28-workflow-v5
+Build: 2026.07.28-workflow-v5.1-import-hotfix
 Fecha: 2026-07-28
 
 Incluye todas las correcciones anteriores y estas mejoras de flujo:
@@ -20,3 +20,11 @@ Comprobación rápida:
 - Busca mtg_downloader/project_io.py.
 - Busca mtg_downloader/print_map.py.
 - Busca mtg_downloader/preflight.py.
+
+
+Hotfix v5.1:
+- app.py ya no importa filter_scryfall_alternatives desde review.py.
+- El filtro queda definido localmente para evitar fallos al desplegar una
+  actualización sobre archivos antiguos.
+- Se mantiene la función en review.py por compatibilidad.
+- El paquete se verifica arrancando Streamlit desde una extracción limpia.

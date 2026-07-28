@@ -75,7 +75,6 @@ from mtg_downloader.profile_resolution import resolve_with_language_fallback
 from mtg_downloader.review import (
     candidate_key,
     candidate_label,
-    filter_scryfall_alternatives,
     is_problematic,
     preview_urls,
     problem_reasons,
@@ -103,7 +102,7 @@ st.set_page_config(
 st.title("🃏 Proxy Maker")
 
 ANALYSIS_ENGINE_VERSION = "workflow-v5"
-BUILD_VERSION = "2026.07.28-workflow-v5"
+BUILD_VERSION = "2026.07.28-workflow-v5.1-import-hotfix"
 SCRYFALL_ALTERNATIVE_ORDER_VERSION = "configurable-v2"
 
 
@@ -595,6 +594,86 @@ def clear_generated_output() -> None:
         "pdf_output_signature",
     ):
         st.session_state.pop(key, None)
+
+
+def _candidate_treatment_for_filter(
+    candidate: dict[str, Any],
+) -> str:
+    """Classify a Scryfall printing without importing optional UI helpers."""
+    frame_effects = {
+        str(value).casefold()
+        for value in candidate.get("frame_effects") or []
+    }
+    promo_types = {
+        str(value).casefold()
+        for value in candidate.get("promo_types") or []
+    }
+    if (
+        candidate.get("border_color") == "borderless"
+        or candidate.get("full_art") is True
+        or "extendedart" in frame_effects
+    ):
+        return "borderless"
+    if "showcase" in frame_effects or "showcase" in promo_types:
+        return "showcase"
+    if (
+        "retro" in frame_effects
+        or "oldframe" in frame_effects
+        or str(candidate.get("frame") or "") in {"1993", "1997"}
+    ):
+        return "retro"
+    return "normal"
+
+
+def filter_scryfall_alternatives(
+    candidates: list[dict[str, Any]],
+    *,
+    set_code: str = "",
+    year: str = "",
+    artist: str = "",
+    treatment: str = "all",
+) -> list[dict[str, Any]]:
+    """Filter Scryfall versions while preserving their existing order."""
+    expected_set = set_code.strip().casefold()
+    expected_year = year.strip()
+    expected_artist = artist.strip().casefold()
+    valid_treatments = {
+        "all",
+        "normal",
+        "borderless",
+        "showcase",
+        "retro",
+    }
+    if treatment not in valid_treatments:
+        raise ValueError(f"Tratamiento desconocido: {treatment}")
+
+    filtered: list[dict[str, Any]] = []
+    for candidate in candidates:
+        candidate_set = str(candidate.get("set") or "").casefold()
+        if expected_set and candidate_set != expected_set:
+            continue
+
+        released_at = str(candidate.get("released_at") or "")
+        if expected_year and not released_at.startswith(
+            f"{expected_year}-"
+        ):
+            continue
+
+        candidate_artist = str(
+            candidate.get("artist") or ""
+        ).casefold()
+        if expected_artist and expected_artist not in candidate_artist:
+            continue
+
+        if (
+            treatment != "all"
+            and _candidate_treatment_for_filter(candidate) != treatment
+        ):
+            continue
+
+        filtered.append(candidate)
+
+    return filtered
 
 
 def cache_dir() -> Path:
