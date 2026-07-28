@@ -74,11 +74,13 @@ def test_candidate_label_contains_printing_language_and_quality() -> None:
             "lang": "es",
             "image_status": "highres_scan",
             "highres_image": True,
+            "released_at": "2026-07-01",
         }
     )
     assert "CMM 396" in label
     assert "ES" in label
     assert "alta resolución" in label
+    assert "2026-07-01" in label
 
 
 def test_review_row_marks_correct_card() -> None:

@@ -1,5 +1,5 @@
 Proxy Maker
-Build: 2026.07.28-dual-card-fix-v3
+Build: 2026.07.28-scryfall-newest-first-v4
 Fecha: 2026-07-28
 
 Flujo multimazo por mazo:
@@ -26,3 +26,9 @@ Corrección v3 para cartas dobles:
 - MPCFill utiliza el nombre completo y el frontal como fallback.
 - Las búsquedas exactas con set code no aceptan diseños de otra edición.
 - Las cachés de alternativas incluyen el nombre completo y la impresión.
+
+
+Orden de versiones Scryfall v4:
+- Las impresiones se muestran por released_at descendente.
+- El idioma y la resolución ya no alteran el orden cronológico.
+- La fecha de salida aparece en la etiqueta de cada versión.

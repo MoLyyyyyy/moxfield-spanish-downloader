@@ -421,7 +421,7 @@ def test_multiple_decks_fill_pages_continuously() -> None:
 
 def test_build_version_identifies_multideck_download() -> None:
     app = app_text()
-    assert 'BUILD_VERSION = "2026.07.28-dual-card-fix-v3"' in app
+    assert 'BUILD_VERSION = "2026.07.28-scryfall-newest-first-v4"' in app
     assert '"Número de mazos"' in app
 
 
@@ -474,3 +474,11 @@ def test_version_caches_include_full_dual_card_identity() -> None:
     assert "selected.source.collector_number or ''" in app
     assert "client.search_designs(" in app
     assert "canonical_card_name(selected.source.name)," in app
+
+
+
+def test_scryfall_versions_are_explicitly_newest_first() -> None:
+    app = app_text()
+    assert 'SCRYFALL_ALTERNATIVE_ORDER_VERSION = "released-desc-v1"' in app
+    assert "Orden de Scryfall: impresiones más nuevas primero." in app
+    assert "SCRYFALL_ALTERNATIVE_ORDER_VERSION" in app

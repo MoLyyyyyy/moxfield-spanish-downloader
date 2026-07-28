@@ -465,46 +465,38 @@ class ScryfallClient:
         highres_only: bool = False,
         max_results: int = 12,
     ) -> list[dict[str, Any]]:
+        """Return official printings from newest to oldest."""
         if max_results < 1:
             return []
 
-        language_groups: list[list[dict[str, Any]]] = []
-        for language in languages:
-            candidates = [
-                candidate
-                for candidate in self._search_printings(name, language)
-                if self._has_usable_image(candidate)
-                and (not highres_only or self._is_highres(candidate))
-            ]
-            candidates = sorted(
-                candidates,
-                key=lambda candidate: not self._is_highres(candidate),
-            )
-            language_groups.append(candidates)
-
-        selected: list[dict[str, Any]] = []
+        ranked: list[tuple[dict[str, Any], int]] = []
         seen: set[str] = set()
-        quota = max(1, max_results // max(len(language_groups), 1))
 
-        for group in language_groups:
-            for candidate in group[:quota]:
-                key = self._candidate_identity(candidate)
-                if key not in seen:
-                    seen.add(key)
-                    selected.append(candidate)
+        for language_priority, language in enumerate(languages):
+            for candidate in self._search_printings(name, language):
+                if not self._has_usable_image(candidate):
+                    continue
+                if highres_only and not self._is_highres(candidate):
+                    continue
 
-        if len(selected) < max_results:
-            for group in language_groups:
-                for candidate in group[quota:]:
-                    key = self._candidate_identity(candidate)
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    selected.append(candidate)
-                    if len(selected) >= max_results:
-                        return selected
+                identity = self._candidate_identity(candidate)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                ranked.append((candidate, language_priority))
 
-        return selected[:max_results]
+        ranked.sort(
+            key=lambda item: (
+                str(item[0].get("released_at") or ""),
+                self._is_highres(item[0]),
+                -item[1],
+            ),
+            reverse=True,
+        )
+        return [
+            candidate
+            for candidate, _language_priority in ranked[:max_results]
+        ]
 
     def cache_path_for_face(self, face: ImageFace) -> Path:
         cache_identity = (

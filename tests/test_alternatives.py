@@ -4,7 +4,14 @@ from mtg_downloader.models import DeckCard
 from mtg_downloader.scryfall import ScryfallClient
 
 
-def candidate(card_id, language, set_code, number, highres):
+def candidate(
+    card_id,
+    language,
+    set_code,
+    number,
+    highres,
+    released_at="2025-01-01",
+):
     return {
         "id": card_id,
         "lang": language,
@@ -14,7 +21,7 @@ def candidate(card_id, language, set_code, number, highres):
         "collector_number": number,
         "image_status": "highres_scan" if highres else "lowres",
         "highres_image": highres,
-        "released_at": "2025-01-01",
+        "released_at": released_at,
         "image_uris": {"png": f"https://x/{card_id}.png"},
     }
 
@@ -137,4 +144,72 @@ def test_manual_double_faced_candidate_preserves_both_faces() -> None:
     assert [face.url for face in result.faces] == [
         "https://x/studious-front.png",
         "https://x/rampant-back.png",
+    ]
+
+
+
+class ChronologicalAlternativesClient(ScryfallClient):
+    def __init__(self):
+        super().__init__(
+            Path("/tmp/moxfield_alternatives_chronological"),
+            image_quality="png",
+        )
+
+    def _search_printings(self, name, language):
+        if language == "es":
+            return [
+                candidate(
+                    "es-older-high",
+                    "es",
+                    "old",
+                    "1",
+                    True,
+                    "2024-02-01",
+                ),
+                candidate(
+                    "es-newest-low",
+                    "es",
+                    "new",
+                    "2",
+                    False,
+                    "2026-07-01",
+                ),
+            ]
+        return [
+            candidate(
+                "en-middle-high",
+                "en",
+                "mid",
+                "3",
+                True,
+                "2025-10-15",
+            ),
+            candidate(
+                "en-oldest-high",
+                "en",
+                "anc",
+                "4",
+                True,
+                "2023-01-01",
+            ),
+        ]
+
+
+def test_search_alternatives_are_newest_first_across_languages() -> None:
+    client = ChronologicalAlternativesClient()
+    try:
+        alternatives = client.search_alternatives(
+            "Arcane Signet",
+            languages=("es", "en"),
+            highres_only=False,
+            max_results=12,
+        )
+    finally:
+        client.close()
+
+    assert [item["id"] for item in alternatives] == [
+        "es-newest-low",
+        "en-middle-high",
+        "es-older-high",
+        "en-oldest-high",
     ]

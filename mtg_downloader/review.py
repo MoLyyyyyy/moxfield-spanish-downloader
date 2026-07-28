@@ -73,7 +73,16 @@ def candidate_label(candidate: dict[str, Any]) -> str:
         or candidate.get("highres_image") is True
         else str(candidate.get("image_status") or "calidad desconocida")
     )
-    return f"{name} · {set_code} {collector} · {language} · {quality}"
+    released_at = str(candidate.get("released_at") or "").strip()
+    release_label = (
+        f" · {released_at}"
+        if released_at
+        else ""
+    )
+    return (
+        f"{name} · {set_code} {collector} · {language}"
+        f"{release_label} · {quality}"
+    )
 
 
 def preview_urls(candidate: dict[str, Any] | None) -> list[str]:

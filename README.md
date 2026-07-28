@@ -542,3 +542,12 @@ Al revisar una carta de dos caras, el selector oficial muestra todas las caras
 de cada impresión antes de elegirla. La selección manual conserva todas sus
 imágenes físicas. Las búsquedas de MPCFill prueban primero el nombre completo y
 después el nombre frontal, sin perder el código de edición indicado.
+
+
+### Orden de versiones de Scryfall
+
+Las impresiones oficiales del selector manual se ordenan globalmente por fecha
+de lanzamiento, desde la más nueva hasta la más antigua. El orden se mantiene
+aunque se estén mostrando simultáneamente versiones en español e inglés o
+imágenes de distinta resolución. La fecha `released_at` aparece junto a cada
+versión.

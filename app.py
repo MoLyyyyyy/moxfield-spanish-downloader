@@ -83,7 +83,8 @@ st.set_page_config(
 st.title("🃏 Proxy Maker")
 
 ANALYSIS_ENGINE_VERSION = "dual-card-fix-v3"
-BUILD_VERSION = "2026.07.28-dual-card-fix-v3"
+BUILD_VERSION = "2026.07.28-scryfall-newest-first-v4"
+SCRYFALL_ALTERNATIVE_ORDER_VERSION = "released-desc-v1"
 
 if "app_step" not in st.session_state:
     st.session_state["app_step"] = (
@@ -1668,7 +1669,8 @@ def render_review_panel() -> None:
             )
             cache_key = (
                 f"{selected_index}|{card_cache_identity}|{languages}|"
-                f"{highres_only}|{visible_limit}"
+                f"{highres_only}|{visible_limit}|"
+                f"{SCRYFALL_ALTERNATIVE_ORDER_VERSION}"
             )
             cache = st.session_state.setdefault("alternatives", {})
             if cache_key not in cache:
@@ -1688,6 +1690,9 @@ def render_review_panel() -> None:
                     st.error(str(exc))
                     cache[cache_key] = []
             alternatives = cache.get(cache_key, [])
+            st.caption(
+                "Orden de Scryfall: impresiones más nuevas primero."
+            )
             if not alternatives:
                 st.info("No se encontraron impresiones con esos filtros.")
             columns = st.columns(3)
