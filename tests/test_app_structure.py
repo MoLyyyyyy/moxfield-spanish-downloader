@@ -152,15 +152,15 @@ def test_problematic_cards_are_grouped_first_in_gallery() -> None:
 
 
 
-def test_spanish_profile_uses_english_as_last_resort() -> None:
+def test_language_controls_are_explicit() -> None:
     app = app_text()
-    assert "allow_english_if_missing = getattr(" in app
-    assert "profile_key == \"spanish_only\"" in app
-    assert "resolve_with_language_fallback(" in app
-    assert "allow_english_if_missing=allow_english_if_missing" in app
-    readme = Path("README.md").read_text(encoding="utf-8")
-    assert "usa inglés como último recurso" in readme
-
+    assert '"Idioma principal"' in app
+    assert '"Edición"' in app
+    assert '"Calidad"' in app
+    assert "allow_language_fallback" in app
+    assert "preferred_language=preferred_language" in app
+    assert "Perfil de selección" not in app
+    assert "Personalizar reglas" not in app
 
 
 def test_app_uses_a_three_step_wizard() -> None:
@@ -168,7 +168,8 @@ def test_app_uses_a_three_step_wizard() -> None:
     assert "1. Lista y opciones" in app
     assert "2. Revisar versiones" in app
     assert "3. Validar y exportar" in app
-    assert 'st.form("analysis_form")' in app
+    assert 'st.form("analysis_form")' not in app
+    assert 'analysis_submitted = st.button(' in app
     assert 'st.session_state["app_step"] = 2' in app
     assert "Continuar a exportación →" in app
     assert "← Volver a revisar" in app
@@ -235,3 +236,12 @@ def test_application_is_named_proxy_maker() -> None:
     assert "Moxfield Cartas ES" not in app
     readme = Path("README.md").read_text(encoding="utf-8")
     assert readme.startswith("# Proxy Maker")
+
+
+
+def test_search_options_are_always_visible() -> None:
+    app = app_text()
+    assert "Personalizar reglas" not in app
+    assert '"Idioma principal"' in app
+    assert '"Edición"' in app
+    assert '"Calidad"' in app

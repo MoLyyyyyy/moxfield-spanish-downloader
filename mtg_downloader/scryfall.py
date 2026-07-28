@@ -66,6 +66,8 @@ class ScryfallClient:
         card: DeckCard,
         allow_english_fallback: bool = True,
         allow_english_if_missing: bool = False,
+        preferred_language: str | None = None,
+        allow_language_fallback: bool | None = None,
         resolution_mode: str = "exact_first",
         quality_mode: str = "prefer_highres",
     ) -> ResolvedCard:
@@ -73,6 +75,15 @@ class ScryfallClient:
             raise ValueError(f"Modo de resolución desconocido: {resolution_mode}")
         if quality_mode not in {"allow_lowres", "prefer_highres", "highres_only"}:
             raise ValueError(f"Modo de calidad desconocido: {quality_mode}")
+
+        if preferred_language is not None:
+            return self._resolve_preferred_language(
+                card,
+                preferred_language=preferred_language,
+                allow_language_fallback=bool(allow_language_fallback),
+                resolution_mode=resolution_mode,
+                quality_mode=quality_mode,
+            )
 
         has_exact_printing = bool(card.set_code and card.collector_number)
         prefer_highres_search = quality_mode != "allow_lowres"
@@ -228,6 +239,134 @@ class ScryfallClient:
                     else "No encontrada"
                 ),
                 error=quality_error,
+            )
+
+        status, selected = selected_pair
+        return self.resolve_from_candidate(card, selected, status=status)
+
+    def _resolve_preferred_language(
+        self,
+        card: DeckCard,
+        *,
+        preferred_language: str,
+        allow_language_fallback: bool,
+        resolution_mode: str,
+        quality_mode: str,
+    ) -> ResolvedCard:
+        if preferred_language not in {"es", "en"}:
+            raise ValueError(
+                f"Idioma principal desconocido: {preferred_language}"
+            )
+
+        has_exact_printing = bool(card.set_code and card.collector_number)
+        prefer_highres = quality_mode != "allow_lowres"
+        fallback_language = "en" if preferred_language == "es" else "es"
+        language_labels = {"es": "español", "en": "inglés"}
+
+        def exact_language_parameter(language: str) -> str | None:
+            return "es" if language == "es" else None
+
+        def choose_for_language(
+            language: str,
+            *,
+            fallback: bool,
+        ) -> tuple[str, dict[str, Any]] | None:
+            first_usable: tuple[str, dict[str, Any]] | None = None
+            label = language_labels[language]
+            suffix = (
+                f" (respaldo en {label})"
+                if fallback
+                else ""
+            )
+
+            def consider(
+                status: str,
+                candidate: dict[str, Any] | None,
+            ) -> tuple[str, dict[str, Any]] | None:
+                nonlocal first_usable
+                if not candidate or not self._has_usable_image(candidate):
+                    return None
+                pair = (status, candidate)
+                if first_usable is None:
+                    first_usable = pair
+                if quality_mode == "allow_lowres":
+                    return pair
+                if self._is_highres(candidate):
+                    return pair
+                return None
+
+            selected: tuple[str, dict[str, Any]] | None = None
+
+            if resolution_mode in {"exact_first", "exact_only"}:
+                if not has_exact_printing:
+                    if resolution_mode == "exact_only":
+                        return None
+                else:
+                    selected = consider(
+                        f"Misma impresión en {label}{suffix}",
+                        self._get_card_by_printing(
+                            card.set_code or "",
+                            card.collector_number or "",
+                            language=exact_language_parameter(language),
+                        ),
+                    )
+
+            if not selected and resolution_mode == "exact_first":
+                selected = consider(
+                    f"Otra impresión en {label}{suffix}",
+                    self._find_printing(
+                        card.name,
+                        language=language,
+                        prefer_highres=prefer_highres,
+                    ),
+                )
+
+            if not selected and resolution_mode == "flexible":
+                selected = consider(
+                    f"Impresión flexible en {label}{suffix}",
+                    self._find_printing(
+                        card.name,
+                        language=language,
+                        prefer_highres=prefer_highres,
+                    ),
+                )
+
+            if not selected and quality_mode == "prefer_highres":
+                selected = first_usable
+            return selected
+
+        if resolution_mode == "exact_only" and not has_exact_printing:
+            return ResolvedCard(
+                source=card,
+                status="Sin impresión exacta",
+                error=(
+                    "La carta no incluye edición y número de coleccionista "
+                    "en la lista."
+                ),
+            )
+
+        selected_pair = choose_for_language(
+            preferred_language,
+            fallback=False,
+        )
+        if not selected_pair and allow_language_fallback:
+            selected_pair = choose_for_language(
+                fallback_language,
+                fallback=True,
+            )
+
+        if not selected_pair:
+            return ResolvedCard(
+                source=card,
+                status=(
+                    "Sin alta resolución"
+                    if quality_mode == "highres_only"
+                    else "No encontrada"
+                ),
+                error=(
+                    "No se encontró una imagen con la calidad e idioma "
+                    "solicitados."
+                ),
             )
 
         status, selected = selected_pair

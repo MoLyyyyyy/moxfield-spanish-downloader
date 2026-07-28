@@ -21,33 +21,33 @@ def resolve_with_language_fallback(
     client: CardResolver,
     card: DeckCard,
     *,
-    allow_english: bool,
-    allow_english_if_missing: bool,
+    preferred_language: str,
+    allow_language_fallback: bool,
     resolution_mode: str,
     quality_mode: str,
 ) -> ResolvedCard:
-    """Use the fast one-pass resolver, with compatibility for older deployments."""
+    """Resolve using an explicit primary language and optional fallback."""
     try:
         return client.resolve(
             card,
-            allow_english_fallback=allow_english,
-            allow_english_if_missing=allow_english_if_missing,
+            preferred_language=preferred_language,
+            allow_language_fallback=allow_language_fallback,
             resolution_mode=resolution_mode,
             quality_mode=quality_mode,
         )
     except TypeError as exc:
-        if "allow_english_if_missing" not in str(exc):
+        if "preferred_language" not in str(exc):
             raise
 
-    # Compatibility path only for a stale/older ScryfallClient loaded by Streamlit.
-    result = client.resolve(
-        card,
-        allow_english_fallback=allow_english,
-        resolution_mode=resolution_mode,
-        quality_mode=quality_mode,
-    )
-    if allow_english or not allow_english_if_missing or result.faces:
-        return result
+    # Compatibility for a stale resolver during a Streamlit rolling restart.
+    # Older clients only support Spanish-first resolution.
+    if preferred_language == "es":
+        return client.resolve(
+            card,
+            allow_english_fallback=allow_language_fallback,
+            resolution_mode=resolution_mode,
+            quality_mode=quality_mode,
+        )
 
     fallback = client.resolve(
         card,
@@ -55,6 +55,4 @@ def resolve_with_language_fallback(
         resolution_mode=resolution_mode,
         quality_mode=quality_mode,
     )
-    if fallback.faces and (fallback.language or "").casefold() == "en":
-        fallback.status = f"{fallback.status} · Inglés como último recurso"
-    return fallback if fallback.faces else result
+    return fallback

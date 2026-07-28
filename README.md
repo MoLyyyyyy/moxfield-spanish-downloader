@@ -147,25 +147,19 @@ El informe incluye las columnas `estado_imagen` y `alta_resolucion`. Ten en
 cuenta que priorizar calidad puede hacer que se seleccione otra edición o una
 versión inglesa antes que una impresión española de baja resolución.
 
-## Perfiles de descarga
+## Opciones de búsqueda
 
-La interfaz principal utiliza perfiles para evitar que el usuario tenga que
-combinar manualmente edición, idioma y calidad:
+La selección se configura directamente con cuatro controles:
 
-- **Equilibrado — recomendado**: intenta respetar la edición, prioriza alta
-  resolución y usa inglés como respaldo. Las imágenes low-res son el último
-  recurso.
-- **Fidelidad al listado**: solo descarga la edición y número indicados,
-  priorizando español y después inglés aunque la imagen sea low-res.
-- **Máxima calidad**: ignora la edición y solo acepta imágenes de alta
-  resolución, primero en español y después en inglés.
-- **Solo español**: intenta resolver siempre en español; puede cambiar de edición
-  para encontrar una impresión española de mejor calidad. Si no existe ninguna imagen en
-  español, usa inglés como último recurso.
+- **Idioma principal**: español o inglés.
+- **Idioma de respaldo**: usa el otro idioma cuando no existe una imagen
+  válida en el principal.
+- **Edición**: respeta primero la indicada, usa solo esa edición o busca en
+  cualquier edición.
+- **Calidad**: prefiere alta resolución, acepta lowres o exige alta resolución.
 
-Los controles técnicos siguen disponibles en **Opciones avanzadas**, donde se
-pueden personalizar la prioridad de impresión, el idioma, la calidad mínima y
-el formato del archivo.
+El formato PNG o JPG permanece dentro de **Opciones avanzadas**.
+
 
 ## Entrada del mazo
 
@@ -309,13 +303,6 @@ las imágenes de Scryfall y los diseños de MPCFill siguen funcionando
 igual que antes.
 
 
-### Rendimiento del perfil Solo español
-
-El perfil realiza una única resolución por carta. Primero comprueba las
-impresiones españolas y solo consulta inglés dentro de esa misma operación
-cuando no existe ninguna imagen española. No se consultan fuentes externas
-adicionales que puedan introducir esperas o redirecciones.
-
 
 ## Flujo por pasos
 
@@ -352,3 +339,5 @@ mazo, en lugar de perder todo el progreso.
 La aplicación utiliza siempre el reverso estándar de Magic para las cartas de
 una sola cara. El selector de reversos personalizados, neutros y de MPCFill se
 ha retirado de la interfaz.
+
+

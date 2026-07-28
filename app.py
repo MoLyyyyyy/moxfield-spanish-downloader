@@ -34,7 +34,6 @@ from mtg_downloader.persistence import (
     export_selection_config,
     import_selection_config,
 )
-from mtg_downloader.profiles import PROFILES, get_profile
 from mtg_downloader.profile_resolution import resolve_with_language_fallback
 from mtg_downloader.review import (
     candidate_key,
@@ -128,190 +127,167 @@ varias ilustraciones durante el paso de revisión.
 """
         )
 
-    with st.form("analysis_form"):
-        left, right = st.columns([3, 2])
-        with left:
-            decklist_text = st.text_area(
-                "Lista del mazo",
-                value=str(saved_config.get("decklist", "")),
-                height=340,
-                placeholder=(
-                    "Commander:\n"
-                    "1 Beorn the Fierce (HOB) 119 *F*\n\n"
-                    "Deck:\n"
-                    "1 Arcane Signet (TMC) 57\n"
-                    "27 Forest (M20) 279"
-                ),
-                help="Se respetan cantidad, edición y número de coleccionista.",
-            )
-
-        with right:
-            st.subheader("Opciones de análisis")
-            profile_keys = [profile.key for profile in PROFILES]
-            saved_profile = str(saved_config.get("profile_key", "balanced"))
-            if saved_profile not in profile_keys:
-                saved_profile = "balanced"
-            profile_key = st.selectbox(
-                "Perfil de selección",
-                options=profile_keys,
-                format_func=lambda key: get_profile(key).label,
-                index=profile_keys.index(saved_profile),
-            )
-            selected_profile = get_profile(profile_key)
-            profile_description = selected_profile.description
-            if profile_key == "spanish_only":
-                profile_description = (
-                    "Prioriza siempre el español. Si no existe ninguna imagen "
-                    "en español, usa inglés como último recurso."
-                )
-            st.info(profile_description)
-
-            resolution_mode = selected_profile.resolution_mode
-            quality_mode = selected_profile.quality_mode
-            allow_english = selected_profile.allow_english
-            allow_english_if_missing = getattr(
-                selected_profile,
-                "allow_english_if_missing",
-                profile_key == "spanish_only",
-            )
-            image_quality = str(saved_config.get("image_quality", "png"))
-
-            with st.expander("Opciones avanzadas", expanded=False):
-                image_quality_label = st.selectbox(
-                    "Formato de imagen",
-                    [
-                        "PNG — máxima calidad",
-                        "JPG grande — menos espacio",
-                    ],
-                    index=0 if image_quality == "png" else 1,
-                )
-                image_quality = (
-                    "png"
-                    if image_quality_label.startswith("PNG")
-                    else "large"
-                )
-
-                custom_rules = st.checkbox(
-                    "Personalizar reglas",
-                    value=bool(saved_config.get("custom_rules", False)),
-                )
-                if custom_rules:
-                    saved_resolution = str(
-                        saved_config.get("resolution_mode", resolution_mode)
-                    )
-                    resolution_options = [
-                        "Exacta primero",
-                        "Solo exacta",
-                        "Flexible",
-                    ]
-                    resolution_by_label = {
-                        "Exacta primero": "exact_first",
-                        "Solo exacta": "exact_only",
-                        "Flexible": "flexible",
-                    }
-                    current_resolution_label = next(
-                        (
-                            label
-                            for label, value in resolution_by_label.items()
-                            if value == saved_resolution
-                        ),
-                        "Exacta primero",
-                    )
-                    resolution_label = st.selectbox(
-                        "Prioridad de impresión",
-                        resolution_options,
-                        index=resolution_options.index(
-                            current_resolution_label
-                        ),
-                    )
-                    resolution_mode = resolution_by_label[resolution_label]
-
-                    saved_quality = str(
-                        saved_config.get("quality_mode", quality_mode)
-                    )
-                    quality_options = [
-                        "Preferir alta resolución",
-                        "Aceptar low-res",
-                        "Solo alta resolución",
-                    ]
-                    quality_by_label = {
-                        "Preferir alta resolución": "prefer_highres",
-                        "Aceptar low-res": "allow_lowres",
-                        "Solo alta resolución": "highres_only",
-                    }
-                    current_quality_label = next(
-                        (
-                            label
-                            for label, value in quality_by_label.items()
-                            if value == saved_quality
-                        ),
-                        "Preferir alta resolución",
-                    )
-                    quality_label = st.selectbox(
-                        "Calidad mínima",
-                        quality_options,
-                        index=quality_options.index(current_quality_label),
-                    )
-                    quality_mode = quality_by_label[quality_label]
-                    allow_english = st.checkbox(
-                        "Permitir inglés como respaldo",
-                        value=bool(
-                            saved_config.get(
-                                "allow_english",
-                                allow_english,
-                            )
-                        ),
-                    )
-                    allow_english_if_missing = (
-                        profile_key == "spanish_only"
-                        and not allow_english
-                    )
-                else:
-                    st.caption(
-                        f"`{resolution_mode}` · `{quality_mode}` · "
-                        f"{'ES/EN' if allow_english else 'solo ES'}"
-                    )
-
-            include_sideboard = st.checkbox(
-                "Incluir sideboard",
-                value=bool(saved_config.get("include_sideboard", False)),
-            )
-            include_maybeboard = st.checkbox(
-                "Incluir maybeboard",
-                value=bool(saved_config.get("include_maybeboard", False)),
-            )
-
-        analysis_submitted = st.form_submit_button(
-            "Analizar mazo",
-            type="primary",
-            use_container_width=True,
+    left, right = st.columns([3, 2])
+    with left:
+        decklist_text = st.text_area(
+            "Lista del mazo",
+            value=str(saved_config.get("decklist", "")),
+            height=340,
+            placeholder=(
+                "Commander:\n"
+                "1 Beorn the Fierce (HOB) 119 *F*\n\n"
+                "Deck:\n"
+                "1 Arcane Signet (TMC) 57\n"
+                "27 Forest (M20) 279"
+            ),
+            help="Se respetan cantidad, edición y número de coleccionista.",
         )
+
+    with right:
+        st.subheader("Opciones de análisis")
+
+        language_labels = {
+            "Español": "es",
+            "Inglés": "en",
+        }
+        saved_language = str(
+            saved_config.get("preferred_language", "es")
+        )
+        if saved_language not in {"es", "en"}:
+            saved_language = "es"
+        current_language_label = (
+            "Español" if saved_language == "es" else "Inglés"
+        )
+        language_label = st.selectbox(
+            "Idioma principal",
+            options=list(language_labels),
+            index=list(language_labels).index(current_language_label),
+            help=(
+                "La búsqueda se completa en este idioma antes de probar "
+                "el idioma de respaldo."
+            ),
+        )
+        preferred_language = language_labels[language_label]
+
+        fallback_label = (
+            "Usar inglés como respaldo cuando no haya una imagen válida"
+            if preferred_language == "es"
+            else "Usar español como respaldo cuando no haya una imagen válida"
+        )
+        allow_language_fallback = st.checkbox(
+            fallback_label,
+            value=bool(
+                saved_config.get("allow_language_fallback", True)
+            ),
+        )
+
+        resolution_labels = {
+            "Respetar la edición indicada primero": "exact_first",
+            "Usar únicamente la edición indicada": "exact_only",
+            "Buscar en cualquier edición": "flexible",
+        }
+        saved_resolution = str(
+            saved_config.get("resolution_mode", "exact_first")
+        )
+        current_resolution_label = next(
+            (
+                label
+                for label, value in resolution_labels.items()
+                if value == saved_resolution
+            ),
+            "Respetar la edición indicada primero",
+        )
+        resolution_label = st.selectbox(
+            "Edición",
+            options=list(resolution_labels),
+            index=list(resolution_labels).index(
+                current_resolution_label
+            ),
+            help=(
+                "Define cuánto debe respetarse la edición y el número de "
+                "coleccionista de la lista."
+            ),
+        )
+        resolution_mode = resolution_labels[resolution_label]
+
+        quality_labels = {
+            "Preferir alta resolución": "prefer_highres",
+            "Aceptar imágenes lowres": "allow_lowres",
+            "Usar solo alta resolución": "highres_only",
+        }
+        saved_quality = str(
+            saved_config.get("quality_mode", "prefer_highres")
+        )
+        current_quality_label = next(
+            (
+                label
+                for label, value in quality_labels.items()
+                if value == saved_quality
+            ),
+            "Preferir alta resolución",
+        )
+        quality_label = st.selectbox(
+            "Calidad",
+            options=list(quality_labels),
+            index=list(quality_labels).index(current_quality_label),
+        )
+        quality_mode = quality_labels[quality_label]
+
+        image_quality = str(saved_config.get("image_quality", "png"))
+        with st.expander("Opciones avanzadas", expanded=False):
+            image_quality_label = st.selectbox(
+                "Formato de imagen",
+                [
+                    "PNG — máxima calidad",
+                    "JPG grande — menos espacio",
+                ],
+                index=0 if image_quality == "png" else 1,
+            )
+            image_quality = (
+                "png"
+                if image_quality_label.startswith("PNG")
+                else "large"
+            )
+
+        include_sideboard = st.checkbox(
+            "Incluir sideboard",
+            value=bool(saved_config.get("include_sideboard", False)),
+        )
+        include_maybeboard = st.checkbox(
+            "Incluir maybeboard",
+            value=bool(saved_config.get("include_maybeboard", False)),
+        )
+
+    analysis_submitted = st.button(
+        "Analizar mazo",
+        type="primary",
+        use_container_width=True,
+    )
 
     analysis_config = {
         "decklist": decklist_text,
-        "profile_key": profile_key,
+        "preferred_language": preferred_language,
+        "allow_language_fallback": allow_language_fallback,
         "resolution_mode": resolution_mode,
         "quality_mode": quality_mode,
-        "allow_english": allow_english,
-        "allow_english_if_missing": allow_english_if_missing,
         "image_quality": image_quality,
         "include_sideboard": include_sideboard,
         "include_maybeboard": include_maybeboard,
-        "custom_rules": custom_rules,
     }
 else:
     analysis_config = saved_config
     decklist_text = str(analysis_config.get("decklist", ""))
-    profile_key = str(analysis_config.get("profile_key", "balanced"))
+    preferred_language = str(
+        analysis_config.get("preferred_language", "es")
+    )
+    allow_language_fallback = bool(
+        analysis_config.get("allow_language_fallback", True)
+    )
     resolution_mode = str(
         analysis_config.get("resolution_mode", "exact_first")
     )
     quality_mode = str(
         analysis_config.get("quality_mode", "prefer_highres")
-    )
-    allow_english = bool(analysis_config.get("allow_english", True))
-    allow_english_if_missing = bool(
-        analysis_config.get("allow_english_if_missing", False)
     )
     image_quality = str(analysis_config.get("image_quality", "png"))
     include_sideboard = bool(
@@ -325,11 +301,10 @@ else:
 def current_signature() -> str:
     payload = {
         "decklist": decklist_text,
-        "profile_key": profile_key,
+        "preferred_language": preferred_language,
+        "allow_language_fallback": allow_language_fallback,
         "resolution_mode": resolution_mode,
         "quality_mode": quality_mode,
-        "allow_english": allow_english,
-        "allow_english_if_missing": allow_english_if_missing,
         "image_quality": image_quality,
         "include_sideboard": include_sideboard,
         "include_maybeboard": include_maybeboard,
@@ -650,8 +625,8 @@ if app_step == 1 and analysis_submitted:
                     resolved = resolve_with_language_fallback(
                         client,
                         card,
-                        allow_english=allow_english,
-                        allow_english_if_missing=allow_english_if_missing,
+                        preferred_language=preferred_language,
+                        allow_language_fallback=allow_language_fallback,
                         resolution_mode=resolution_mode,
                         quality_mode=quality_mode,
                     )
