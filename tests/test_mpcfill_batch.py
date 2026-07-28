@@ -78,3 +78,59 @@ def test_complete_deck_uses_one_batched_search() -> None:
 def test_query_normalisation_matches_mpcfill_frontend() -> None:
     assert _normalise_query("Frodo, Sauron's Bane") == "frodo saurons bane"
     assert _normalise_query("Fire // Ice") == "fire ice"
+
+
+
+class SingleSlashDualBatchClient(MpcFillClient):
+    def __init__(self):
+        super().__init__(Path("/tmp/proxy_maker_single_slash_dual"))
+        self.queries = []
+
+    def _source_rows(self, preferred_sources=()):
+        return [[1, True]]
+
+    def _search_many_identifiers(self, query_documents, **kwargs):
+        self.queries.extend(
+            document["query"]
+            for document in query_documents.values()
+        )
+        result = {}
+        for key, document in query_documents.items():
+            result[key] = (
+                ["dual-front"]
+                if document["query"] == "studious first-year"
+                else []
+            )
+        return result, 1
+
+    def _get_card_documents(self, identifiers):
+        return {
+            "dual-front": candidate(
+                "dual-front",
+                "PsilosX",
+            )
+        }
+
+
+def test_single_slash_dual_card_uses_front_name_fallback() -> None:
+    client = SingleSlashDualBatchClient()
+    try:
+        results = client.resolve_many_auto(
+            [
+                DeckCard(
+                    1,
+                    "Studious First-Year / Rampant Growth",
+                )
+            ],
+            preferred_language="en",
+            allow_language_fallback=False,
+            resolution_mode="flexible",
+            quality_mode="prefer_highres",
+            preferred_sources=DEFAULT_PREFERRED_SOURCES,
+        )
+    finally:
+        client.close()
+
+    assert results[0].faces
+    assert "studious first-year rampant growth" in client.queries
+    assert "studious first-year" in client.queries

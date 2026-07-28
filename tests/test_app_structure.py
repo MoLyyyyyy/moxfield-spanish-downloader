@@ -40,7 +40,9 @@ def test_alternatives_are_automatic_and_side_by_side() -> None:
 
 def test_previews_are_compact_and_centered() -> None:
     app = app_text()
-    assert "st.image(urls[0], width=135)" in app
+    assert "render_version_candidate_preview(urls)" in app
+    assert "st.image(urls[0], width=single_width)" in app
+    assert "st.image(url, width=105)" in app
     assert "st.image(preview, width=135)" in app
     assert "st.columns([1, 2, 1])" in app
     assert "st.columns([1, 3, 1])" in app
@@ -321,7 +323,7 @@ def test_mpcfill_analysis_is_batched_per_deck() -> None:
 
 def test_analysis_engine_version_invalidates_stale_results() -> None:
     app = app_text()
-    assert 'ANALYSIS_ENGINE_VERSION = "per-deck-workflow-v2"' in app
+    assert 'ANALYSIS_ENGINE_VERSION = "dual-card-fix-v3"' in app
     assert '"engine_version": ANALYSIS_ENGINE_VERSION' in app
 
 
@@ -419,7 +421,7 @@ def test_multiple_decks_fill_pages_continuously() -> None:
 
 def test_build_version_identifies_multideck_download() -> None:
     app = app_text()
-    assert 'BUILD_VERSION = "2026.07.28-per-deck-workflow-v2"' in app
+    assert 'BUILD_VERSION = "2026.07.28-dual-card-fix-v3"' in app
     assert '"Número de mazos"' in app
 
 
@@ -453,3 +455,22 @@ def test_manual_alternatives_inherit_active_deck_settings() -> None:
     assert 'preferred_language = deck_config["preferred_language"]' in app
     assert 'quality_mode = deck_config["quality_mode"]' in app
     assert 'image_quality = deck_config["image_quality"]' in app
+
+
+
+def test_dual_card_version_selector_shows_every_face() -> None:
+    app = app_text()
+    assert "def render_version_candidate_preview(" in app
+    assert 'st.caption(f"Versión de {len(urls)} caras")' in app
+    assert "for start in range(0, len(urls), 2):" in app
+    assert "render_version_candidate_preview(urls)" in app
+    assert "st.image(urls[0], width=135)" not in app
+
+
+def test_version_caches_include_full_dual_card_identity() -> None:
+    app = app_text()
+    assert "canonical_card_name(selected.source.name)" in app
+    assert "selected.source.set_code or ''" in app
+    assert "selected.source.collector_number or ''" in app
+    assert "client.search_designs(" in app
+    assert "canonical_card_name(selected.source.name)," in app

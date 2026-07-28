@@ -88,3 +88,53 @@ def test_manual_candidate_becomes_resolved_card() -> None:
     assert result.language == "es"
     assert result.selected_set == "cmm"
     assert result.faces[0].extension == ".png"
+
+
+
+def test_manual_double_faced_candidate_preserves_both_faces() -> None:
+    candidate_data = {
+        "id": "dfc-en",
+        "lang": "en",
+        "name": "Studious First-Year // Rampant Growth",
+        "set": "sos",
+        "collector_number": "162",
+        "image_status": "highres_scan",
+        "highres_image": True,
+        "card_faces": [
+            {
+                "name": "Studious First-Year",
+                "image_uris": {
+                    "png": "https://x/studious-front.png",
+                },
+            },
+            {
+                "name": "Rampant Growth",
+                "image_uris": {
+                    "png": "https://x/rampant-back.png",
+                },
+            },
+        ],
+    }
+    client = AlternativesClient()
+    try:
+        result = client.resolve_from_candidate(
+            DeckCard(
+                1,
+                "Studious First-Year / Rampant Growth",
+                set_code="sos",
+            ),
+            candidate_data,
+            status="Selección manual",
+        )
+    finally:
+        client.close()
+
+    assert result.selected_set == "sos"
+    assert [face.label for face in result.faces] == [
+        "Studious First-Year",
+        "Rampant Growth",
+    ]
+    assert [face.url for face in result.faces] == [
+        "https://x/studious-front.png",
+        "https://x/rampant-back.png",
+    ]

@@ -12,6 +12,7 @@ from urllib.parse import quote
 import httpx
 
 from .image_processing import process_mpc_image_bytes
+from .card_names import canonical_card_name, normalised_card_name
 from .models import DeckCard, ImageFace, ResolvedCard
 
 SCRYFALL_API = "https://api.scryfall.com"
@@ -23,18 +24,12 @@ class ScryfallError(RuntimeError):
 
 
 def _canonical_card_name(value: str) -> str:
-    """Normalise Moxfield's / and Scryfall's // face separators."""
-    parts = [
-        part.strip()
-        for part in value.replace(" // ", " / ").split(" / ")
-    ]
-    if len(parts) > 1:
-        return " // ".join(part for part in parts if part)
-    return " ".join(value.split()).strip()
+    """Backward-compatible wrapper around shared name normalisation."""
+    return canonical_card_name(value)
 
 
 def _normalised_card_name(value: str) -> str:
-    return _canonical_card_name(value).casefold()
+    return normalised_card_name(value)
 
 
 def _candidate_matches_full_name(

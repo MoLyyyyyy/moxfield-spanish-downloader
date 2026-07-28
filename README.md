@@ -531,3 +531,14 @@ selector superior.
 Las cartas de los distintos mazos no se fusionan aunque tengan el mismo nombre.
 Solo se concatenan físicamente al generar el PDF, respetando el orden de los
 mazos y aprovechando los huecos de la última hoja.
+
+
+### Versiones de cartas dobles
+
+Los nombres `A / B` y `A // B` se normalizan como la misma carta. Esto se
+aplica tanto a Scryfall como a MPCFill.
+
+Al revisar una carta de dos caras, el selector oficial muestra todas las caras
+de cada impresión antes de elegirla. La selección manual conserva todas sus
+imágenes físicas. Las búsquedas de MPCFill prueban primero el nombre completo y
+después el nombre frontal, sin perder el código de edición indicado.

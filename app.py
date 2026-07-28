@@ -13,6 +13,7 @@ import streamlit as st
 
 from mtg_downloader.archive import build_zip, cache_stats
 from mtg_downloader.backs import standard_magic_back
+from mtg_downloader.card_names import canonical_card_name
 from mtg_downloader.deck_view import (
     filtered_indices,
     gallery_printing_label,
@@ -81,8 +82,8 @@ st.set_page_config(
 
 st.title("🃏 Proxy Maker")
 
-ANALYSIS_ENGINE_VERSION = "per-deck-workflow-v2"
-BUILD_VERSION = "2026.07.28-per-deck-workflow-v2"
+ANALYSIS_ENGINE_VERSION = "dual-card-fix-v3"
+BUILD_VERSION = "2026.07.28-dual-card-fix-v3"
 
 if "app_step" not in st.session_state:
     st.session_state["app_step"] = (
@@ -1227,6 +1228,30 @@ def render_deck_gallery() -> None:
             mpc_client.close()
 
 
+def render_version_candidate_preview(
+    urls: list[str],
+    *,
+    single_width: int = 135,
+) -> None:
+    """Show every physical face when choosing a card version."""
+    if not urls:
+        return
+
+    if len(urls) == 1:
+        _, image_column, _ = st.columns([1, 2, 1])
+        with image_column:
+            st.image(urls[0], width=single_width)
+        return
+
+    st.caption(f"Versión de {len(urls)} caras")
+    for start in range(0, len(urls), 2):
+        face_columns = st.columns(2)
+        for offset, url in enumerate(urls[start : start + 2]):
+            with face_columns[offset]:
+                st.image(url, width=105)
+                st.caption(f"Cara {start + offset + 1}")
+
+
 def render_selected_preview(card: ResolvedCard) -> None:
     if card.provider == "mpcfill" and card.scryfall_data:
         face = card.faces[0] if card.faces else None
@@ -1244,7 +1269,14 @@ def render_selected_preview(card: ResolvedCard) -> None:
         except MpcFillError as exc:
             st.warning(str(exc))
     else:
-        urls = preview_urls(card.scryfall_data) or [face.url for face in card.faces]
+        urls = (
+            preview_urls(card.scryfall_data)
+            or [face.url for face in card.faces]
+        )
+        if len(urls) > 1:
+            st.caption(
+                f"Versión seleccionada con {len(urls)} caras físicas."
+            )
         for url in urls:
             _, image_column, _ = st.columns([1, 3, 1])
             with image_column:
@@ -1629,8 +1661,13 @@ def render_review_panel() -> None:
                 f"{quality_label}"
             )
             visible_limit = int(st.session_state.get(visible_key, 12))
+            card_cache_identity = (
+                f"{canonical_card_name(selected.source.name)}|"
+                f"{selected.source.set_code or ''}|"
+                f"{selected.source.collector_number or ''}"
+            )
             cache_key = (
-                f"{selected_index}|{languages}|"
+                f"{selected_index}|{card_cache_identity}|{languages}|"
                 f"{highres_only}|{visible_limit}"
             )
             cache = st.session_state.setdefault("alternatives", {})
@@ -1658,10 +1695,7 @@ def render_review_panel() -> None:
                 with columns[alt_index % 3]:
                     with st.container(border=True):
                         urls = preview_urls(candidate)
-                        if urls:
-                            _, image_column, _ = st.columns([1, 2, 1])
-                            with image_column:
-                                st.image(urls[0], width=135)
+                        render_version_candidate_preview(urls)
                         st.caption(candidate_label(candidate))
                         with ScryfallClient(
                             cache_dir(),
@@ -1726,8 +1760,13 @@ def render_review_panel() -> None:
                 f"{minimum_dpi}"
             )
             visible_limit = int(st.session_state.get(visible_key, 12))
+            card_cache_identity = (
+                f"{canonical_card_name(selected.source.name)}|"
+                f"{selected.source.set_code or ''}|"
+                f"{selected.source.collector_number or ''}"
+            )
             cache_key = (
-                f"{selected_index}|{languages}|"
+                f"{selected_index}|{card_cache_identity}|{languages}|"
                 f"{minimum_dpi}|{visible_limit}"
             )
             cache = st.session_state.setdefault("mpc_alternatives", {})
@@ -1736,7 +1775,7 @@ def render_review_panel() -> None:
                     if cache_key not in cache:
                         with st.spinner("Buscando diseños MPCFill..."):
                             cache[cache_key] = client.search_designs(
-                                selected.source.name,
+                                canonical_card_name(selected.source.name),
                                 languages=languages,
                                 minimum_dpi=minimum_dpi,
                                 max_results=visible_limit,

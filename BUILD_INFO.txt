@@ -1,5 +1,5 @@
 Proxy Maker
-Build: 2026.07.28-per-deck-workflow-v2
+Build: 2026.07.28-dual-card-fix-v3
 Fecha: 2026-07-28
 
 Flujo multimazo por mazo:
@@ -18,3 +18,11 @@ Comprobación rápida:
 - Busca "per-deck-workflow-v2" en app.py.
 - Busca "Mazo en revisión" en app.py.
 - Busca mtg_downloader/deck_workflow.py.
+
+
+Corrección v3 para cartas dobles:
+- / y // se consideran el mismo separador.
+- Scryfall conserva y muestra todas las caras al elegir una versión.
+- MPCFill utiliza el nombre completo y el frontal como fallback.
+- Las búsquedas exactas con set code no aceptan diseños de otra edición.
+- Las cachés de alternativas incluyen el nombre completo y la impresión.

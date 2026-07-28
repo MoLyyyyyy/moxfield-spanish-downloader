@@ -15,6 +15,11 @@ from .image_processing import (
     CROP_AUTO,
     process_mpc_image_bytes,
 )
+from .card_names import (
+    canonical_card_name,
+    front_card_name,
+    is_multi_face_name,
+)
 from .models import DeckCard, ImageFace, ResolvedCard
 
 MPCFILL_BASE_URL = "https://mpcfill.com"
@@ -202,9 +207,10 @@ class MpcFillClient:
             # Any edition means no printing restriction and fuzzy matching.
             search_modes = [(True, None, None)]
 
-        names_to_try = [card.name]
-        if " // " in card.name:
-            front_name = card.name.split(" // ", 1)[0].strip()
+        canonical_name = canonical_card_name(card.name)
+        names_to_try = [canonical_name]
+        if is_multi_face_name(card.name):
+            front_name = front_card_name(card.name)
             if front_name and front_name not in names_to_try:
                 names_to_try.append(front_name)
 
@@ -247,10 +253,7 @@ class MpcFillClient:
                             quality_mode=quality_mode,
                             preferred_sources=preferred_sources,
                             preferred_set_code=card.set_code,
-                            require_set_code=(
-                                expansion_code is not None
-                                and collector_number is not None
-                            ),
+                            require_set_code=bool(expansion_code),
                         )
                         if candidate is None:
                             continue
@@ -363,9 +366,9 @@ class MpcFillClient:
             key_to_index: dict[str, int] = {}
             for index in indices:
                 card = cards[index]
-                query_name = card.name
-                if front_name_only and " // " in query_name:
-                    query_name = query_name.split(" // ", 1)[0].strip()
+                query_name = canonical_card_name(card.name)
+                if front_name_only and is_multi_face_name(card.name):
+                    query_name = front_card_name(card.name)
 
                 query_document: dict[str, Any] = {
                     "query": _normalise_query(query_name),
@@ -513,7 +516,7 @@ class MpcFillClient:
         dfc_unresolved = [
             index
             for index in unresolved
-            if " // " in cards[index].name
+            if is_multi_face_name(cards[index].name)
         ]
         if dfc_unresolved:
             remaining_dfc = resolve_pass(
