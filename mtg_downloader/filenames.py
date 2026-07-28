@@ -35,3 +35,27 @@ def commander_pdf_filename(cards: Iterable[Any]) -> str:
     source = getattr(first, "source", first)
     name = getattr(source, "name", "")
     return f"{safe_filename_component(name)}.pdf"
+
+
+
+def multi_deck_pdf_filename(
+    deck_names: Iterable[str],
+    cards: Iterable[Any],
+) -> str:
+    """Build a useful PDF name for one or several concatenated decks."""
+    names = [
+        safe_filename_component(name)
+        for name in deck_names
+        if str(name or "").strip()
+    ]
+    if not names:
+        return commander_pdf_filename(cards)
+    if len(names) == 1:
+        return f"{names[0]}.pdf"
+    if len(names) == 2:
+        return (
+            f"{safe_filename_component(f'{names[0]} + {names[1]}')}.pdf"
+        )
+    return (
+        f"{safe_filename_component(f'{names[0]} + {len(names) - 1} mazos')}.pdf"
+    )

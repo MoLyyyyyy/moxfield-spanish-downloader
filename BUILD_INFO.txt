@@ -1,0 +1,13 @@
+Proxy Maker
+Build: 2026.07.28-multideck-v1
+Fecha: 2026-07-28
+
+Incluye:
+- Soporte para 1-12 mazos en una sola generación.
+- Los mazos se colocan uno detrás de otro sin saltos de hoja.
+- Aviso y cálculo de huecos pagados.
+- División automática de PDFs superiores a 200 MB.
+- Descarga única en ZIP cuando el PDF se divide.
+
+Comprobación rápida:
+Busca "Número de mazos" en app.py.

@@ -34,6 +34,7 @@ def validate_deck(
     cards: list[ResolvedCard],
     *,
     back_spec: BackSpec | None = None,
+    warn_duplicates: bool = True,
 ) -> ValidationSummary:
     missing: list[str] = []
     lowres: list[str] = []
@@ -99,7 +100,7 @@ def validate_deck(
         warnings.append(f"Hay {len(set(lowres))} entradas de baja resolución.")
     if bleed:
         warnings.append(f"Hay {len(set(bleed))} entradas MPCFill con un recorte no automático.")
-    if duplicates:
+    if duplicates and warn_duplicates:
         warnings.append(f"Hay {len(duplicates)} entradas duplicadas en la lista.")
 
     return ValidationSummary(
@@ -111,7 +112,9 @@ def validate_deck(
         missing_entries=tuple(sorted(set(missing))),
         lowres_entries=tuple(sorted(set(lowres))),
         bleed_retained=tuple(sorted(set(bleed))),
-        duplicate_entries=tuple(duplicates),
+        duplicate_entries=(
+            tuple(duplicates) if warn_duplicates else ()
+        ),
         minimum_known_dpi=min(dpi_values) if dpi_values else None,
         errors=tuple(errors),
         warnings=tuple(warnings),

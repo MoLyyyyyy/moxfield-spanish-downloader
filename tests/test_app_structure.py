@@ -316,7 +316,7 @@ def test_mpcfill_analysis_is_batched() -> None:
 
 def test_analysis_engine_version_invalidates_stale_results() -> None:
     app = app_text()
-    assert 'ANALYSIS_ENGINE_VERSION = "mpcfill-batch-v1"' in app
+    assert 'ANALYSIS_ENGINE_VERSION = "multi-deck-v1"' in app
     assert '"engine_version": ANALYSIS_ENGINE_VERSION' in app
 
 
@@ -329,10 +329,11 @@ def test_manual_mpcfill_results_prioritize_same_set_code() -> None:
 
 
 
-def test_pdf_uses_first_card_filename() -> None:
+def test_pdf_uses_deck_names_for_filename() -> None:
     app = app_text()
-    assert "from mtg_downloader.filenames import commander_pdf_filename" in app
-    assert "pdf_file_name = commander_pdf_filename(cards)" in app
+    assert "from mtg_downloader.filenames import multi_deck_pdf_filename" in app
+    assert "pdf_file_name = multi_deck_pdf_filename(" in app
+    assert '[summary["name"] for summary in deck_summaries]' in app
     assert "mazo_impresion_mpcfilltopdf.pdf" not in app
 
 
@@ -381,3 +382,33 @@ def test_export_warns_about_paid_empty_slots() -> None:
     assert "para completar la última hoja" in app
     assert "sin huecos pagados" in app
     assert "únicamente al final de la última hoja" in app
+
+
+
+def test_multiple_deck_inputs_are_supported() -> None:
+    app = app_text()
+    assert '"Número de mazos"' in app
+    assert "max_value=12" in app
+    assert "decklist_texts: list[str]" in app
+    assert 'key=f"decklist_input_{deck_index}"' in app
+    assert '"Analizar mazos"' in app
+    assert "parse_multiple_decklists(" in app
+    assert '"deck_summaries"' in app
+    assert '"multi_deck_stats"' in app
+
+
+def test_multiple_decks_fill_pages_continuously() -> None:
+    app = app_text()
+    assert "sin saltos de hoja entre ellos" in app
+    assert "rellena los huecos libres" in app
+    assert "saved_paid_slots" in app
+    assert "posiciones pagadas" in app
+    assert "warn_duplicates=deck_count == 1" in app
+    assert "multi_deck_pdf_filename(" in app
+
+
+
+def test_build_version_identifies_multideck_download() -> None:
+    app = app_text()
+    assert 'BUILD_VERSION = "2026.07.28-multideck-v1"' in app
+    assert '"Número de mazos"' in app

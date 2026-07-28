@@ -502,3 +502,18 @@ se pagarán en blanco y cuántas cartas se pueden añadir para completarla.
 Por ejemplo, 100 cartas requieren 12 hojas, equivalentes a 108 posiciones, por
 lo que quedan 8 huecos. Los huecos se colocan únicamente al final de la última
 hoja y no bloquean la generación.
+
+
+### Varios mazos en un único PDF
+
+En el paso 1 se puede seleccionar entre 1 y 12 mazos y pegar cada exportación
+en un campo independiente. Las listas se mantienen separadas durante el
+análisis y la revisión, pero en el PDF se colocan de forma continua:
+
+1. todas las cartas del mazo 1;
+2. inmediatamente después, las del mazo 2;
+3. y así sucesivamente, sin saltos de hoja entre mazos.
+
+La pantalla de exportación muestra cuántas hojas se ahorran frente a generar un
+PDF separado para cada mazo. Las cartas repetidas entre mazos siguen siendo
+entradas independientes y no se consideran duplicados accidentales.

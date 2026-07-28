@@ -30,3 +30,25 @@ def test_missing_image_blocks_generation() -> None:
     card = ResolvedCard(source=DeckCard(1, "Missing"), status="Sin imagen")
     result = validate_deck([card])
     assert not result.can_generate
+
+
+
+def test_duplicate_warning_can_be_disabled_for_multiple_decks() -> None:
+    card_one = ResolvedCard(
+        source=DeckCard(1, "Sol Ring"),
+        status="ok",
+        faces=[ImageFace("Sol Ring", "fake", ".png")],
+    )
+    card_two = ResolvedCard(
+        source=DeckCard(1, "Sol Ring"),
+        status="ok",
+        faces=[ImageFace("Sol Ring", "fake", ".png")],
+    )
+
+    summary = validate_deck(
+        [card_one, card_two],
+        warn_duplicates=False,
+    )
+
+    assert not summary.duplicate_entries
+    assert not any("duplicadas" in warning for warning in summary.warnings)

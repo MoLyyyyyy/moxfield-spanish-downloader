@@ -20,9 +20,14 @@ from mtg_downloader.deck_view import (
     group_deck,
 )
 from mtg_downloader.decklist import parse_exported_decklist
-from mtg_downloader.filenames import commander_pdf_filename
+from mtg_downloader.filenames import multi_deck_pdf_filename
 from mtg_downloader.image_processing import CROP_AUTO, CROP_FORCE, CROP_NONE
 from mtg_downloader.models import CardVariant, DeckCard, ImageFace, ResolvedCard
+from mtg_downloader.multi_deck import (
+    MultiDeckResult,
+    parse_multiple_decklists,
+    serialise_deck_summaries,
+)
 from mtg_downloader.mpcfill import (
     DEFAULT_PREFERRED_SOURCES,
     MpcFillClient,
@@ -70,7 +75,8 @@ st.set_page_config(
 
 st.title("🃏 Proxy Maker")
 
-ANALYSIS_ENGINE_VERSION = "mpcfill-batch-v1"
+ANALYSIS_ENGINE_VERSION = "multi-deck-v1"
+BUILD_VERSION = "2026.07.28-multideck-v1"
 
 if "app_step" not in st.session_state:
     st.session_state["app_step"] = (
@@ -122,8 +128,8 @@ analysis_submitted = False
 
 if app_step == 1:
     st.write(
-        "Pega la exportación de tu mazo y elige cómo deben buscarse las "
-        "impresiones. El resto de la aplicación aparecerá después del análisis."
+        "Pega una o varias exportaciones de mazos y elige cómo deben "
+        "buscarse las impresiones. Los mazos se imprimirán uno detrás de otro."
     )
 
     with st.expander("Cómo obtener la lista", expanded=False):
@@ -132,7 +138,7 @@ if app_step == 1:
 1. Abre el mazo en Moxfield.
 2. Exporta o copia la lista como texto.
 3. Pega el contenido en esta aplicación.
-4. Pulsa **Analizar mazo**.
+4. Pulsa **Analizar mazo** o **Analizar mazos**.
 
 ```text
 Commander:
@@ -145,24 +151,71 @@ Deck:
 
 Una entrada con 27 copias genera 27 cartas físicas y puede repartirse entre
 varias ilustraciones durante el paso de revisión.
+
+Para combinar varios mazos, aumenta **Número de mazos** y pega cada lista en su
+campo. No se añaden saltos de hoja entre ellos: el siguiente mazo comienza en
+el primer hueco libre del anterior.
 """
         )
 
+    saved_decklists_value = saved_config.get("decklists")
+    if isinstance(saved_decklists_value, list) and saved_decklists_value:
+        saved_decklists = [str(value) for value in saved_decklists_value]
+    else:
+        saved_decklists = [str(saved_config.get("decklist", ""))]
+
     left, right = st.columns([3, 2])
     with left:
-        decklist_text = st.text_area(
-            "Lista del mazo",
-            value=str(saved_config.get("decklist", "")),
-            height=340,
-            placeholder=(
-                "Commander:\n"
-                "1 Beorn the Fierce (HOB) 119 *F*\n\n"
-                "Deck:\n"
-                "1 Arcane Signet (TMC) 57\n"
-                "27 Forest (M20) 279"
-            ),
-            help="Se respetan cantidad, edición y número de coleccionista.",
+        deck_count = int(
+            st.number_input(
+                "Número de mazos",
+                min_value=1,
+                max_value=12,
+                value=max(1, len(saved_decklists)),
+                step=1,
+                help=(
+                    "Cada lista se mantiene independiente durante la "
+                    "revisión, pero todas se colocan de forma continua "
+                    "en el PDF final."
+                ),
+            )
         )
+        st.caption(
+            "Orden de impresión: mazo 1, mazo 2, etc. El siguiente mazo "
+            "rellena los huecos libres de la última hoja del anterior."
+        )
+
+        decklist_texts: list[str] = []
+        for deck_index in range(deck_count):
+            saved_value = (
+                saved_decklists[deck_index]
+                if deck_index < len(saved_decklists)
+                else ""
+            )
+            label = (
+                "Lista del mazo"
+                if deck_count == 1
+                else f"Lista del mazo {deck_index + 1}"
+            )
+            decklist_texts.append(
+                st.text_area(
+                    label,
+                    value=saved_value,
+                    height=340 if deck_count == 1 else 240,
+                    placeholder=(
+                        "Commander:\n"
+                        "1 Beorn the Fierce (HOB) 119 *F*\n\n"
+                        "Deck:\n"
+                        "1 Arcane Signet (TMC) 57\n"
+                        "27 Forest (M20) 279"
+                    ),
+                    help=(
+                        "Se respetan cantidad, edición y número de "
+                        "coleccionista."
+                    ),
+                    key=f"decklist_input_{deck_index}",
+                )
+            )
 
     with right:
         st.subheader("Opciones de análisis")
@@ -311,13 +364,14 @@ varias ilustraciones durante el paso de revisión.
                 )
 
     analysis_submitted = st.button(
-        "Analizar mazo",
+        "Analizar mazo" if deck_count == 1 else "Analizar mazos",
         type="primary",
         width="stretch",
     )
 
     analysis_config = {
-        "decklist": decklist_text,
+        "decklists": decklist_texts,
+        "decklist": decklist_texts[0],
         "preferred_image_source": preferred_image_source,
         "preferred_language": preferred_language,
         "allow_language_fallback": allow_language_fallback,
@@ -329,7 +383,16 @@ varias ilustraciones durante el paso de revisión.
     }
 else:
     analysis_config = saved_config
-    decklist_text = str(analysis_config.get("decklist", ""))
+    configured_decklists = analysis_config.get("decklists")
+    if isinstance(configured_decklists, list) and configured_decklists:
+        decklist_texts = [
+            str(value) for value in configured_decklists
+        ]
+    else:
+        decklist_texts = [
+            str(analysis_config.get("decklist", ""))
+        ]
+    deck_count = len(decklist_texts)
     preferred_image_source = str(
         analysis_config.get("preferred_image_source", "scryfall")
     )
@@ -357,7 +420,7 @@ else:
 def current_signature() -> str:
     payload = {
         "engine_version": ANALYSIS_ENGINE_VERSION,
-        "decklist": decklist_text,
+        "decklists": decklist_texts,
         "preferred_image_source": preferred_image_source,
         "preferred_language": preferred_language,
         "allow_language_fallback": allow_language_fallback,
@@ -372,20 +435,12 @@ def current_signature() -> str:
     ).hexdigest()
 
 
-def load_cards() -> list[DeckCard]:
-    if not decklist_text.strip():
-        raise ValueError("Pega una lista de mazo.")
-    cards = parse_exported_decklist(decklist_text)
-    if not include_sideboard:
-        cards = [card for card in cards if card.zone != "sideboard"]
-    if not include_maybeboard:
-        cards = [card for card in cards if card.zone != "maybeboard"]
-    if not cards:
-        raise ValueError(
-            "No se ha interpretado ninguna carta. Cada línea debe comenzar "
-            "por una cantidad, por ejemplo `1 Arcane Signet (TMC) 57`."
-        )
-    return cards
+def load_decks() -> MultiDeckResult:
+    return parse_multiple_decklists(
+        decklist_texts,
+        include_sideboard=include_sideboard,
+        include_maybeboard=include_maybeboard,
+    )
 
 
 def clear_generated_output() -> None:
@@ -631,7 +686,8 @@ def apply_bulk_action(indices: list[int], action: str) -> None:
 if app_step == 1 and analysis_submitted:
     clear_generated_output()
     try:
-        cards = load_cards()
+        multi_deck_result = load_decks()
+        cards = multi_deck_result.cards
         requested_signature = current_signature()
 
         if (
@@ -754,6 +810,23 @@ if app_step == 1 and analysis_submitted:
         )
         st.session_state["cards"] = cards
         st.session_state["resolved_cards"] = resolved_cards
+        st.session_state["deck_summaries"] = (
+            serialise_deck_summaries(multi_deck_result)
+        )
+        st.session_state["multi_deck_stats"] = {
+            "deck_count": multi_deck_result.deck_count,
+            "separate_sheet_count": (
+                multi_deck_result.separate_sheet_count
+            ),
+            "combined_sheet_count": (
+                multi_deck_result.combined_usage.sheet_count
+            ),
+            "combined_empty_slots": (
+                multi_deck_result.combined_usage.empty_slots
+            ),
+            "saved_sheets": multi_deck_result.saved_sheets,
+            "saved_paid_slots": multi_deck_result.saved_paid_slots,
+        }
         st.session_state["analysis_config"] = analysis_config
         st.session_state["analysis_signature"] = requested_signature
         st.session_state["analysis_image_quality"] = image_quality
@@ -772,15 +845,19 @@ if app_step == 1 and analysis_submitted:
                 else "Scryfall"
             )
             st.session_state["flash_message"] = (
-                f"Análisis completado: {len(cards)} entradas y "
-                f"{total_copies} copias. "
+                f"Análisis completado: "
+                f"{multi_deck_result.deck_count} "
+                f"{'mazo' if multi_deck_result.deck_count == 1 else 'mazos'}, "
+                f"{len(cards)} entradas y {total_copies} copias. "
                 f"{temporary_failures} cartas quedaron pendientes por "
                 f"errores temporales de {failed_source}."
             )
         else:
             st.session_state["flash_message"] = (
-                f"Análisis completado: {len(cards)} entradas y "
-                f"{total_copies} copias."
+                f"Análisis completado: "
+                f"{multi_deck_result.deck_count} "
+                f"{'mazo' if multi_deck_result.deck_count == 1 else 'mazos'}, "
+                f"{len(cards)} entradas y {total_copies} copias."
             )
         st.rerun()
     except (ValueError, ScryfallError, OSError) as exc:
@@ -1587,7 +1664,19 @@ def render_export_panel() -> None:
     back_spec = standard_magic_back()
     include_backs = True
 
-    validation = validate_deck(cards, back_spec=back_spec)
+    deck_summaries = list(
+        st.session_state.get("deck_summaries") or []
+    )
+    multi_deck_stats = dict(
+        st.session_state.get("multi_deck_stats") or {}
+    )
+    deck_count = max(len(deck_summaries), 1)
+
+    validation = validate_deck(
+        cards,
+        back_spec=back_spec,
+        warn_duplicates=deck_count == 1,
+    )
     metrics = st.columns(6)
     metrics[0].metric("Copias", validation.expected_cards)
     metrics[1].metric("Frentes", validation.expected_front_files)
@@ -1603,6 +1692,36 @@ def render_export_panel() -> None:
         st.error(error)
     for warning in validation.warnings:
         st.warning(warning)
+
+    if deck_count > 1:
+        st.info(
+            f"{deck_count} mazos se imprimirán uno detrás de otro, "
+            "sin saltos de hoja entre ellos."
+        )
+        with st.expander("Mazos incluidos y orden de impresión", expanded=False):
+            for summary in deck_summaries:
+                st.write(
+                    f"**{summary['index']}. {summary['name']}** — "
+                    f"{summary['copies']} cartas, "
+                    f"{summary['sheet_count']} hojas si se imprime por separado"
+                )
+
+        saved_sheets = int(multi_deck_stats.get("saved_sheets", 0))
+        saved_slots = int(multi_deck_stats.get("saved_paid_slots", 0))
+        if saved_sheets:
+            st.success(
+                f"Al combinarlos se "
+                f"{'ahorra' if saved_sheets == 1 else 'ahorran'} "
+                f"{saved_sheets} "
+                f"{'hoja' if saved_sheets == 1 else 'hojas'} "
+                f"({saved_slots} posiciones pagadas) frente a generar "
+                "un PDF independiente para cada mazo."
+            )
+        else:
+            st.caption(
+                "En esta combinación no se reduce el número total de hojas, "
+                "pero tampoco se añaden huecos entre mazos."
+            )
 
     sheet_usage = calculate_sheet_usage(validation.expected_cards)
     if sheet_usage.is_full:
@@ -1704,7 +1823,10 @@ def render_export_panel() -> None:
             ),
         )
 
-    pdf_file_name = commander_pdf_filename(cards)
+    pdf_file_name = multi_deck_pdf_filename(
+        [summary["name"] for summary in deck_summaries],
+        cards,
+    )
     pdf_image_quality = st.session_state["analysis_image_quality"]
     pdf_output_signature = hashlib.sha256(
         json.dumps(
