@@ -341,3 +341,20 @@ una sola cara. El selector de reversos personalizados, neutros y de MPCFill se
 ha retirado de la interfaz.
 
 
+
+
+### Navegación sin perder el análisis
+
+El paso 2 muestra botones de navegación tanto arriba como abajo. Volver a
+**Lista y opciones** conserva el análisis, las versiones seleccionadas y los
+ajustes manuales. Desde el paso 1 se puede regresar al análisis guardado sin
+repetir búsquedas; cuando hay cambios sin analizar, también es posible
+descartarlos y recuperar la revisión anterior.
+
+
+### Filtros de otras versiones
+
+El editor de cada carta utiliza desplegables coherentes para Scryfall y
+MPCFill. El idioma puede limitarse a español, inglés o ambos. En Scryfall la
+calidad también se selecciona mediante un desplegable entre alta resolución y
+todas las calidades.

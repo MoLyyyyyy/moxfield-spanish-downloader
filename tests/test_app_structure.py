@@ -245,3 +245,30 @@ def test_search_options_are_always_visible() -> None:
     assert '"Idioma principal"' in app
     assert '"Edición"' in app
     assert '"Calidad"' in app
+
+
+
+def test_step_two_can_return_without_losing_analysis() -> None:
+    app = app_text()
+    assert '"← Lista y opciones"' in app
+    assert 'key="step2_back_top"' in app
+    assert 'key="step2_back_bottom"' in app
+    assert "Volver al paso 1 no elimina el análisis" in app
+    assert "Volver a revisar el análisis guardado" in app
+    assert "Descartar cambios y volver al análisis guardado" in app
+    assert 'st.session_state["app_step"] = 1' in app
+    assert 'st.session_state["app_step"] = 2' in app
+
+
+
+def test_alternative_language_filters_use_selectboxes() -> None:
+    app = app_text()
+    assert '"Español e inglés"' in app
+    assert '"Solo español"' in app
+    assert '"Solo inglés"' in app
+    assert 'key=f"alt_lang_{selected_index}"' in app
+    assert 'key=f"alt_quality_{selected_index}"' in app
+    assert '"Incluir inglés"' not in app
+    assert 'key=f"alt_en_{selected_index}"' not in app
+    assert 'quality_label == "Solo alta resolución"' in app
+    assert 'languages = {' in app

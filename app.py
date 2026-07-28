@@ -679,10 +679,27 @@ signature_matches = (
     analysis_ready
     and st.session_state.get("analysis_signature") == current_signature()
 )
-if app_step == 1 and analysis_ready and not signature_matches:
-    st.warning(
-        "La lista o sus opciones han cambiado. Pulsa **Analizar mazo** de nuevo."
-    )
+if app_step == 1 and analysis_ready:
+    if signature_matches:
+        st.info(
+            "El análisis anterior sigue guardado. Puedes volver a revisarlo "
+            "sin repetir ninguna búsqueda."
+        )
+        return_label = "Volver a revisar el análisis guardado →"
+    else:
+        st.warning(
+            "Has cambiado la lista o alguna opción. Puedes analizar de nuevo "
+            "o descartar estos cambios y volver al análisis guardado."
+        )
+        return_label = "Descartar cambios y volver al análisis guardado"
+
+    if st.button(
+        return_label,
+        key="return_to_saved_analysis",
+        use_container_width=True,
+    ):
+        st.session_state["app_step"] = 2
+        st.rerun()
 
 
 def render_persistence_panel() -> None:
@@ -1201,18 +1218,25 @@ def render_review_panel() -> None:
         )
 
         if source == "Oficiales · Scryfall":
-            filters = st.columns([2, 2, 1])
+            filters = st.columns([1.7, 1.5, 1])
             with filters[0]:
-                include_en = st.checkbox(
-                    "Incluir inglés",
-                    value=True,
-                    key=f"alt_en_{selected_index}",
+                language_label = st.selectbox(
+                    "Idioma",
+                    [
+                        "Español e inglés",
+                        "Solo español",
+                        "Solo inglés",
+                    ],
+                    key=f"alt_lang_{selected_index}",
                 )
             with filters[1]:
-                highres_only = st.checkbox(
-                    "Solo alta resolución",
-                    value=True,
-                    key=f"alt_high_{selected_index}",
+                quality_label = st.selectbox(
+                    "Calidad",
+                    [
+                        "Solo alta resolución",
+                        "Todas las calidades",
+                    ],
+                    key=f"alt_quality_{selected_index}",
                 )
             with filters[2]:
                 limit = st.selectbox(
@@ -1221,8 +1245,28 @@ def render_review_panel() -> None:
                     index=2,
                     key=f"alt_limit_{selected_index}",
                 )
-            languages = ("es", "en") if include_en else ("es",)
-            cache_key = f"{selected_index}|{languages}|{highres_only}|{limit}"
+
+            primary_language = (
+                preferred_language
+                if preferred_language in {"es", "en"}
+                else "es"
+            )
+            secondary_language = (
+                "en" if primary_language == "es" else "es"
+            )
+            languages = {
+                "Español e inglés": (
+                    primary_language,
+                    secondary_language,
+                ),
+                "Solo español": ("es",),
+                "Solo inglés": ("en",),
+            }[language_label]
+            highres_only = quality_label == "Solo alta resolución"
+            cache_key = (
+                f"{selected_index}|{languages}|"
+                f"{highres_only}|{limit}"
+            )
             cache = st.session_state.setdefault("alternatives", {})
             if cache_key not in cache:
                 try:
@@ -1274,7 +1318,11 @@ def render_review_panel() -> None:
             with filters[0]:
                 language_label = st.selectbox(
                     "Idioma",
-                    ["Todos", "Español", "Inglés"],
+                    [
+                        "Español e inglés",
+                        "Solo español",
+                        "Solo inglés",
+                    ],
                     key=f"mpc_lang_{selected_index}",
                 )
             with filters[1]:
@@ -1294,9 +1342,9 @@ def render_review_panel() -> None:
                 "Las miniaturas de MPCFill se recortan automáticamente. Si la imagen no es de MPCFill, no se recorta."
             )
             languages = {
-                "Todos": (),
-                "Español": ("ES",),
-                "Inglés": ("EN",),
+                "Español e inglés": ("ES", "EN"),
+                "Solo español": ("ES",),
+                "Solo inglés": ("EN",),
             }[language_label]
             cache_key = f"{selected_index}|{languages}|{minimum_dpi}|{limit}"
             cache = st.session_state.setdefault("mpc_alternatives", {})
@@ -1627,19 +1675,43 @@ def render_export_panel() -> None:
 
 
 if app_step == 2 and signature_matches:
-    render_workspace()
-
-    navigation = st.columns([1, 2, 1])
-    with navigation[0]:
+    top_navigation = st.columns([1, 2, 1])
+    with top_navigation[0]:
         if st.button(
-            "← Editar lista y opciones",
+            "← Lista y opciones",
+            key="step2_back_top",
             use_container_width=True,
         ):
             st.session_state["app_step"] = 1
             st.rerun()
-    with navigation[2]:
+    with top_navigation[2]:
         if st.button(
             "Continuar a exportación →",
+            key="step2_next_top",
+            type="primary",
+            use_container_width=True,
+        ):
+            st.session_state["app_step"] = 3
+            st.rerun()
+
+    st.caption(
+        "Volver al paso 1 no elimina el análisis ni las versiones elegidas."
+    )
+    render_workspace()
+
+    bottom_navigation = st.columns([1, 2, 1])
+    with bottom_navigation[0]:
+        if st.button(
+            "← Lista y opciones",
+            key="step2_back_bottom",
+            use_container_width=True,
+        ):
+            st.session_state["app_step"] = 1
+            st.rerun()
+    with bottom_navigation[2]:
+        if st.button(
+            "Continuar a exportación →",
+            key="step2_next_bottom",
             type="primary",
             use_container_width=True,
         ):
