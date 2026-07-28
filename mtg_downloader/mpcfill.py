@@ -175,7 +175,7 @@ class MpcFillClient:
             "highres_only": (800,),
         }.get(quality_mode, (600, 300))
 
-        has_printing = bool(card.set_code and card.collector_number)
+        has_printing = bool(card.set_code)
         search_modes: list[tuple[bool, str | None, str | None]]
         if resolution_mode == "exact_only":
             if not has_printing:
@@ -185,8 +185,7 @@ class MpcFillClient:
                     provider="mpcfill",
                     type_line=type_line,
                     error=(
-                        "La carta no incluye edición y número de "
-                        "coleccionista en la lista."
+                        "La carta no incluye edición en la lista."
                     ),
                 )
             search_modes = [
@@ -373,10 +372,11 @@ class MpcFillClient:
                     "cardType": "CARD",
                 }
                 if exact_printing:
-                    if not (card.set_code and card.collector_number):
+                    if not card.set_code:
                         continue
                     query_document["expansionCode"] = card.set_code.upper()
-                    query_document["collectorNumber"] = card.collector_number
+                    if card.collector_number:
+                        query_document["collectorNumber"] = card.collector_number
 
                 query_key = f"{index}:{_search_query_key(query_document)}"
                 query_documents[query_key] = query_document
@@ -427,6 +427,8 @@ class MpcFillClient:
                     allowed_languages=tuple(languages),
                     quality_mode=quality_mode,
                     preferred_sources=preferred_sources,
+                    preferred_set_code=cards[index].set_code,
+                    require_set_code=exact_printing and bool(cards[index].set_code),
                 )
                 if candidate is None:
                     unresolved.append(index)
@@ -475,7 +477,6 @@ class MpcFillClient:
                 index
                 for index in unresolved
                 if cards[index].set_code
-                and cards[index].collector_number
             ]
             unresolved_after_exact = resolve_pass(
                 exact_indices,

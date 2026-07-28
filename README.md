@@ -449,3 +449,25 @@ descarga directamente. No se muestra un segundo botón ni se genera el PDF al
 entrar en la pantalla.
 
 Esta función requiere Streamlit 1.54 o posterior.
+
+
+### Desambiguación por edición en MPCFill
+
+Si una carta incluye código de edición en la lista, MPCFill lo usa también
+para separar diseños con nombres compartidos. Esto evita que una carta tipo
+`Studious First-Year / Rampant Growth (SOS)` termine usando por error el diseño
+de `Rampant Growth (TDC)` solo porque comparten parte del nombre.
+
+En modos **exacto** y **exacto primero**, la app intenta la coincidencia por
+código de edición incluso aunque la lista no incluya número de coleccionista.
+
+
+### Desambiguación de nombres en Scryfall
+
+Scryfall puede devolver en una búsqueda por nombre cartas que tienen ese texto
+como nombre de una de sus caras. Proxy Maker valida ahora el nombre completo de
+la carta antes de aceptar un resultado.
+
+Los separadores `/` de Moxfield y `//` de Scryfall se consideran equivalentes.
+Además, un código de edición sin número de coleccionista ya permite realizar
+una búsqueda exacta dentro de esa edición.

@@ -21,6 +21,35 @@ class ScryfallError(RuntimeError):
     pass
 
 
+
+def _canonical_card_name(value: str) -> str:
+    """Normalise Moxfield's / and Scryfall's // face separators."""
+    parts = [
+        part.strip()
+        for part in value.replace(" // ", " / ").split(" / ")
+    ]
+    if len(parts) > 1:
+        return " // ".join(part for part in parts if part)
+    return " ".join(value.split()).strip()
+
+
+def _normalised_card_name(value: str) -> str:
+    return _canonical_card_name(value).casefold()
+
+
+def _candidate_matches_full_name(
+    candidate: dict[str, Any],
+    requested_name: str,
+) -> bool:
+    candidate_name = str(candidate.get("name") or "")
+    if not candidate_name:
+        return False
+    return (
+        _normalised_card_name(candidate_name)
+        == _normalised_card_name(requested_name)
+    )
+
+
 class ScryfallClient:
     def __init__(
         self,
@@ -85,7 +114,7 @@ class ScryfallClient:
                 quality_mode=quality_mode,
             )
 
-        has_exact_printing = bool(card.set_code and card.collector_number)
+        has_exact_printing = bool(card.set_code)
         prefer_highres_search = quality_mode != "allow_lowres"
         first_usable: tuple[str, dict[str, Any]] | None = None
         found_spanish = False
@@ -120,13 +149,24 @@ class ScryfallClient:
         ) -> tuple[str, dict[str, Any]] | None:
             if not has_exact_printing:
                 return None
+
+            if card.collector_number:
+                candidate = self._get_card_by_printing(
+                    card.set_code or "",
+                    card.collector_number,
+                    language=language,
+                )
+            else:
+                candidate = self._find_printing_in_set(
+                    card.name,
+                    set_code=card.set_code or "",
+                    language="es" if language == "es" else "en",
+                    prefer_highres=prefer_highres_search,
+                )
+
             return consider(
                 status,
-                self._get_card_by_printing(
-                    card.set_code or "",
-                    card.collector_number or "",
-                    language=language,
-                ),
+                candidate,
                 spanish=spanish,
             )
 
@@ -154,8 +194,7 @@ class ScryfallClient:
                     source=card,
                     status="Sin impresión exacta",
                     error=(
-                        "La carta no incluye edición y número de coleccionista "
-                        "en la lista."
+                        "La carta no incluye edición en la lista."
                     ),
                 )
 
@@ -258,7 +297,7 @@ class ScryfallClient:
                 f"Idioma principal desconocido: {preferred_language}"
             )
 
-        has_exact_printing = bool(card.set_code and card.collector_number)
+        has_exact_printing = bool(card.set_code)
         prefer_highres = quality_mode != "allow_lowres"
         fallback_language = "en" if preferred_language == "es" else "es"
         language_labels = {"es": "español", "en": "inglés"}
@@ -302,13 +341,23 @@ class ScryfallClient:
                     if resolution_mode == "exact_only":
                         return None
                 else:
+                    if card.collector_number:
+                        exact_candidate = self._get_card_by_printing(
+                            card.set_code or "",
+                            card.collector_number,
+                            language=exact_language_parameter(language),
+                        )
+                    else:
+                        exact_candidate = self._find_printing_in_set(
+                            card.name,
+                            set_code=card.set_code or "",
+                            language=language,
+                            prefer_highres=prefer_highres,
+                        )
+
                     selected = consider(
                         f"Misma impresión en {label}{suffix}",
-                        self._get_card_by_printing(
-                            card.set_code or "",
-                            card.collector_number or "",
-                            language=exact_language_parameter(language),
-                        ),
+                        exact_candidate,
                     )
 
             if not selected and resolution_mode == "exact_first":
@@ -340,8 +389,7 @@ class ScryfallClient:
                 source=card,
                 status="Sin impresión exacta",
                 error=(
-                    "La carta no incluye edición y número de coleccionista "
-                    "en la lista."
+                    "La carta no incluye edición en la lista."
                 ),
             )
 
@@ -529,12 +577,23 @@ class ScryfallClient:
         self,
         name: str,
         language: str,
+        *,
+        set_code: str | None = None,
     ) -> list[dict[str, Any]]:
-        escaped = name.replace("\\", "\\\\").replace('"', '\\"')
+        canonical_name = _canonical_card_name(name)
+        escaped = canonical_name.replace("\\", "\\\\").replace('"', '\\"')
+        query_parts = [
+            f'!"{escaped}"',
+            f"lang:{language}",
+            "game:paper",
+        ]
+        if set_code:
+            query_parts.append(f"set:{set_code.lower()}")
+
         data = self._request_json(
             "/cards/search",
             params={
-                "q": f'!"{escaped}" lang:{language} game:paper',
+                "q": " ".join(query_parts),
                 "order": "released",
                 "dir": "desc",
                 "unique": "prints",
@@ -548,10 +607,16 @@ class ScryfallClient:
         if not isinstance(cards, list):
             return []
 
+        expected_set = set_code.casefold() if set_code else None
         return [
             candidate
             for candidate in cards
             if isinstance(candidate, dict)
+            and _candidate_matches_full_name(candidate, canonical_name)
+            and (
+                expected_set is None
+                or str(candidate.get("set") or "").casefold() == expected_set
+            )
         ]
 
     @staticmethod
@@ -566,6 +631,36 @@ class ScryfallClient:
                 str(candidate.get("name") or ""),
             ]
         )
+
+    def _find_printing_in_set(
+        self,
+        name: str,
+        *,
+        set_code: str,
+        language: str,
+        prefer_highres: bool,
+    ) -> dict[str, Any] | None:
+        usable = [
+            candidate
+            for candidate in self._search_printings(
+                name,
+                language,
+                set_code=set_code,
+            )
+            if self._has_usable_image(candidate)
+        ]
+        if prefer_highres:
+            highres = next(
+                (
+                    candidate
+                    for candidate in usable
+                    if self._is_highres(candidate)
+                ),
+                None,
+            )
+            if highres:
+                return highres
+        return usable[0] if usable else None
 
     def _find_printing(
         self,
