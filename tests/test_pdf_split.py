@@ -102,3 +102,25 @@ def test_pdf_parts_can_be_downloaded_as_one_zip() -> None:
         ]
         assert archive.read("Deck - parte 1 de 2.pdf") == b"first"
         assert archive.read("Deck - parte 2 de 2.pdf") == b"second"
+
+
+def test_split_prefers_a_deck_boundary_before_size_overflow() -> None:
+    data = make_pdf(12)  # six duplex page pairs
+    four_pairs_size = len(serialised_pages(data, list(range(8))))
+    five_pairs_size = len(serialised_pages(data, list(range(10))))
+    threshold = (four_pairs_size + five_pairs_size) // 2
+
+    parts = split_pdf_if_needed(
+        data,
+        "Commander.pdf",
+        max_bytes=threshold,
+        preserve_page_pairs=True,
+        preferred_group_breaks={4},
+    )
+
+    page_counts = [
+        len(PdfReader(BytesIO(part.data)).pages)
+        for part in parts
+    ]
+    assert page_counts[0] == 8
+    assert sum(page_counts) == 12

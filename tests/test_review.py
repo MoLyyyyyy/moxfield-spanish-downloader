@@ -87,3 +87,55 @@ def test_review_row_marks_correct_card() -> None:
     row = review_row(3, resolved())
     assert row["índice"] == 3
     assert row["revisión"] == "correcta"
+
+
+def test_scryfall_filters_preserve_ranked_order() -> None:
+    from mtg_downloader.review import filter_scryfall_alternatives
+
+    candidates = [
+        {
+            "id": "new-borderless",
+            "set": "ltr",
+            "released_at": "2026-01-01",
+            "artist": "John Howe",
+            "border_color": "borderless",
+        },
+        {
+            "id": "old-normal",
+            "set": "ltr",
+            "released_at": "2024-01-01",
+            "artist": "Alan Lee",
+            "border_color": "black",
+        },
+        {
+            "id": "other-set",
+            "set": "cmm",
+            "released_at": "2025-01-01",
+            "artist": "John Howe",
+            "border_color": "black",
+        },
+    ]
+
+    assert [
+        item["id"]
+        for item in filter_scryfall_alternatives(
+            candidates,
+            set_code="LTR",
+        )
+    ] == ["new-borderless", "old-normal"]
+    assert [
+        item["id"]
+        for item in filter_scryfall_alternatives(
+            candidates,
+            artist="howe",
+            treatment="borderless",
+        )
+    ] == ["new-borderless"]
+    assert [
+        item["id"]
+        for item in filter_scryfall_alternatives(
+            candidates,
+            year="2024",
+            treatment="normal",
+        )
+    ] == ["old-normal"]

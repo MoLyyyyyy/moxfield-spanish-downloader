@@ -85,6 +85,64 @@ def candidate_label(candidate: dict[str, Any]) -> str:
     )
 
 
+
+def filter_scryfall_alternatives(
+    candidates: list[dict[str, Any]],
+    *,
+    set_code: str = "",
+    year: str = "",
+    artist: str = "",
+    treatment: str = "all",
+) -> list[dict[str, Any]]:
+    """Filter already-ranked Scryfall candidates without changing their order."""
+    expected_set = set_code.strip().casefold()
+    expected_year = year.strip()
+    expected_artist = artist.strip().casefold()
+    if treatment not in {"all", "normal", "borderless", "showcase", "retro"}:
+        raise ValueError(f"Tratamiento desconocido: {treatment}")
+
+    filtered: list[dict[str, Any]] = []
+    for candidate in candidates:
+        if expected_set and str(candidate.get("set") or "").casefold() != expected_set:
+            continue
+        released_at = str(candidate.get("released_at") or "")
+        if expected_year and not released_at.startswith(f"{expected_year}-"):
+            continue
+        if expected_artist and expected_artist not in str(
+            candidate.get("artist") or ""
+        ).casefold():
+            continue
+        if treatment != "all" and _candidate_treatment(candidate) != treatment:
+            continue
+        filtered.append(candidate)
+    return filtered
+
+
+def _candidate_treatment(candidate: dict[str, Any]) -> str:
+    frame_effects = {
+        str(value).casefold()
+        for value in candidate.get("frame_effects") or []
+    }
+    promo_types = {
+        str(value).casefold()
+        for value in candidate.get("promo_types") or []
+    }
+    if (
+        candidate.get("border_color") == "borderless"
+        or candidate.get("full_art") is True
+        or "extendedart" in frame_effects
+    ):
+        return "borderless"
+    if "showcase" in frame_effects or "showcase" in promo_types:
+        return "showcase"
+    if (
+        "retro" in frame_effects
+        or "oldframe" in frame_effects
+        or str(candidate.get("frame") or "") in {"1993", "1997"}
+    ):
+        return "retro"
+    return "normal"
+
 def preview_urls(candidate: dict[str, Any] | None) -> list[str]:
     if not isinstance(candidate, dict):
         return []

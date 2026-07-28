@@ -31,6 +31,7 @@ def split_pdf_if_needed(
     *,
     max_bytes: int = PDF_SPLIT_LIMIT_BYTES,
     preserve_page_pairs: bool = True,
+    preferred_group_breaks: set[int] | None = None,
 ) -> list[PdfPart]:
     """Split a PDF into size-limited parts while preserving duplex pairs."""
     if max_bytes < 1:
@@ -50,26 +51,44 @@ def split_pdf_if_needed(
         for start in range(0, page_count, group_size)
     ]
 
+    preferred = set(preferred_group_breaks or set())
     raw_parts: list[tuple[bytes, bool]] = []
-    current_pages: list[int] = []
-    current_data = b""
+    group_start = 0
 
-    for group in page_groups:
-        candidate_pages = current_pages + group
-        candidate_data = _write_pages(reader, candidate_pages)
+    while group_start < len(page_groups):
+        best_end = group_start + 1
+        best_data = _write_pages(reader, page_groups[group_start])
+        preferred_end: int | None = None
+        preferred_data: bytes | None = None
 
-        if current_pages and len(candidate_data) > max_bytes:
-            raw_parts.append(
-                (current_data, len(current_data) > max_bytes)
-            )
-            current_pages = list(group)
-            current_data = _write_pages(reader, current_pages)
+        for group_end in range(group_start + 1, len(page_groups) + 1):
+            pages = [
+                page
+                for group in page_groups[group_start:group_end]
+                for page in group
+            ]
+            candidate_data = _write_pages(reader, pages)
+            if len(candidate_data) <= max_bytes or group_end == group_start + 1:
+                best_end = group_end
+                best_data = candidate_data
+                if group_end in preferred:
+                    preferred_end = group_end
+                    preferred_data = candidate_data
+                continue
+            break
+
+        reached_end = best_end == len(page_groups)
+        if not reached_end and preferred_end is not None:
+            selected_end = preferred_end
+            selected_data = preferred_data or best_data
         else:
-            current_pages = candidate_pages
-            current_data = candidate_data
+            selected_end = best_end
+            selected_data = best_data
 
-    if current_pages:
-        raw_parts.append((current_data, len(current_data) > max_bytes))
+        raw_parts.append(
+            (selected_data, len(selected_data) > max_bytes)
+        )
+        group_start = selected_end
 
     if len(raw_parts) == 1:
         part_data, exceeds_limit = raw_parts[0]

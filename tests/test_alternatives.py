@@ -213,3 +213,43 @@ def test_search_alternatives_are_newest_first_across_languages() -> None:
         "es-older-high",
         "en-oldest-high",
     ]
+
+
+def test_search_alternatives_can_show_oldest_first() -> None:
+    client = ChronologicalAlternativesClient()
+    try:
+        alternatives = client.search_alternatives(
+            "Arcane Signet",
+            languages=("es", "en"),
+            max_results=12,
+            sort_mode="oldest",
+        )
+    finally:
+        client.close()
+
+    assert [item["id"] for item in alternatives] == [
+        "en-oldest-high",
+        "es-older-high",
+        "en-middle-high",
+        "es-newest-low",
+    ]
+
+
+def test_search_alternatives_can_prioritise_highres() -> None:
+    client = ChronologicalAlternativesClient()
+    try:
+        alternatives = client.search_alternatives(
+            "Arcane Signet",
+            languages=("es", "en"),
+            max_results=12,
+            sort_mode="highres",
+        )
+    finally:
+        client.close()
+
+    assert [item["id"] for item in alternatives] == [
+        "en-middle-high",
+        "es-older-high",
+        "en-oldest-high",
+        "es-newest-low",
+    ]

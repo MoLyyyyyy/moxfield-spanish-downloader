@@ -433,9 +433,10 @@ archivo o URL parece incluir el **set code** de la carta (por ejemplo `HOB`).
 
 ### Nombre del PDF
 
-El PDF generado utiliza automáticamente el nombre de la primera carta de la
-lista, que normalmente es el comandante. Los caracteres incompatibles con
-nombres de archivo se limpian automáticamente. Por ejemplo:
+El PDF generado utiliza el nombre manual del mazo cuando se ha indicado. Si no,
+utiliza la primera carta detectada, que normalmente es el comandante. Para
+varios mazos combina sus nombres. Los caracteres incompatibles se limpian
+automáticamente. Por ejemplo:
 
 - `Beorn the Fierce` → `Beorn the Fierce.pdf`
 - `Fire // Ice` → `Fire - Ice.pdf`
@@ -551,3 +552,31 @@ de lanzamiento, desde la más nueva hasta la más antigua. El orden se mantiene
 aunque se estén mostrando simultáneamente versiones en español e inglés o
 imágenes de distinta resolución. La fecha `released_at` aparece junto a cada
 versión.
+
+### Flujo de trabajo v5
+
+La aplicación puede guardar un **proyecto completo** en JSON y restaurarlo más
+tarde. El proyecto conserva las listas, ajustes independientes de cada mazo,
+versiones manuales, repartos de copias, recortes MPCFill, estado de revisión y
+ajustes del PDF. Las imágenes no se incrustan: se conservan sus URLs para no
+crear archivos de proyecto innecesariamente grandes.
+
+Durante la revisión, **Reanalizar o cambiar ajustes de este mazo** permite
+cambiar Scryfall/MPCFill, idioma, respaldo, edición, calidad y formato sin
+volver a procesar los demás mazos. Puede reintentar solo las cartas pendientes
+y conservar las decisiones manuales.
+
+La comprobación final muestra imágenes ausentes, lowres, idiomas de respaldo,
+ediciones distintas, cartas dobles incompletas, recortes manuales y mazos no
+marcados como revisados. Cada incidencia de carta ofrece un botón para volver
+directamente a su editor. También muestra una estimación aproximada del tamaño
+del PDF.
+
+El **mapa de posiciones** indica la hoja y posición inicial/final de cada mazo
+y puede descargarse en CSV o PDF. La división de archivos grandes prioriza los
+finales de mazo que coinciden con el final de una hoja, sin separar nunca las
+parejas `1/1B`, `2/2B`, etc.
+
+El selector de Scryfall permite ordenar por versiones nuevas, antiguas o alta
+resolución, y filtrar por edición, año, artista, tratamiento o únicamente la
+edición indicada en la lista.

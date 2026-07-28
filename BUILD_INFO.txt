@@ -1,34 +1,22 @@
 Proxy Maker
-Build: 2026.07.28-scryfall-newest-first-v4
+Build: 2026.07.28-workflow-v5
 Fecha: 2026-07-28
 
-Flujo multimazo por mazo:
-- Entre 1 y 12 mazos.
-- Lista y configuración independiente para cada mazo.
-- Fuente independiente: Scryfall o MPCFill.
-- Idioma principal y respaldo independientes.
-- Política de edición, calidad y formato independientes.
-- Sideboard y maybeboard configurables por mazo.
-- Análisis secuencial, sin mezclar resultados.
-- Galería, edición manual y acciones masivas limitadas al mazo activo.
-- Selector y navegación Mazo anterior / Mazo siguiente.
-- Las cartas solo se concatenan al crear el PDF final.
+Incluye todas las correcciones anteriores y estas mejoras de flujo:
+- Guardar y cargar un proyecto completo en JSON.
+- Restaurar listas, ajustes por mazo, versiones, repartos y recortes.
+- Nombre manual opcional para cada mazo.
+- Cambiar fuente, idioma, edición y calidad al reanalizar un solo mazo.
+- Reintentar únicamente cartas pendientes sin tocar los otros mazos.
+- Comprobación final con accesos directos a las cartas problemáticas.
+- Estimación aproximada del tamaño del PDF.
+- Mapa de posiciones descargable en CSV y PDF.
+- Filtros Scryfall por edición, año, artista y tratamiento.
+- Orden Scryfall configurable: nuevo, antiguo o alta resolución primero.
+- División de PDFs priorizando finales de mazo que coinciden con final de hoja.
 
 Comprobación rápida:
-- Busca "per-deck-workflow-v2" en app.py.
-- Busca "Mazo en revisión" en app.py.
-- Busca mtg_downloader/deck_workflow.py.
-
-
-Corrección v3 para cartas dobles:
-- / y // se consideran el mismo separador.
-- Scryfall conserva y muestra todas las caras al elegir una versión.
-- MPCFill utiliza el nombre completo y el frontal como fallback.
-- Las búsquedas exactas con set code no aceptan diseños de otra edición.
-- Las cachés de alternativas incluyen el nombre completo y la impresión.
-
-
-Orden de versiones Scryfall v4:
-- Las impresiones se muestran por released_at descendente.
-- El idioma y la resolución ya no alteran el orden cronológico.
-- La fecha de salida aparece en la etiqueta de cada versión.
+- Busca BUILD_VERSION = "2026.07.28-workflow-v5" en app.py.
+- Busca mtg_downloader/project_io.py.
+- Busca mtg_downloader/print_map.py.
+- Busca mtg_downloader/preflight.py.

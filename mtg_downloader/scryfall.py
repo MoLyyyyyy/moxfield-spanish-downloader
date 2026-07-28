@@ -464,10 +464,13 @@ class ScryfallClient:
         languages: tuple[str, ...] = ("es", "en"),
         highres_only: bool = False,
         max_results: int = 12,
+        sort_mode: str = "newest",
     ) -> list[dict[str, Any]]:
-        """Return official printings from newest to oldest."""
+        """Return official printings in the requested review order."""
         if max_results < 1:
             return []
+        if sort_mode not in {"newest", "oldest", "highres"}:
+            raise ValueError(f"Orden de Scryfall desconocido: {sort_mode}")
 
         ranked: list[tuple[dict[str, Any], int]] = []
         seen: set[str] = set()
@@ -485,14 +488,32 @@ class ScryfallClient:
                 seen.add(identity)
                 ranked.append((candidate, language_priority))
 
-        ranked.sort(
-            key=lambda item: (
-                str(item[0].get("released_at") or ""),
-                self._is_highres(item[0]),
-                -item[1],
-            ),
-            reverse=True,
-        )
+        if sort_mode == "oldest":
+            ranked.sort(
+                key=lambda item: (
+                    str(item[0].get("released_at") or "9999-99-99"),
+                    not self._is_highres(item[0]),
+                    item[1],
+                )
+            )
+        elif sort_mode == "highres":
+            ranked.sort(
+                key=lambda item: (
+                    self._is_highres(item[0]),
+                    str(item[0].get("released_at") or ""),
+                    -item[1],
+                ),
+                reverse=True,
+            )
+        else:
+            ranked.sort(
+                key=lambda item: (
+                    str(item[0].get("released_at") or ""),
+                    self._is_highres(item[0]),
+                    -item[1],
+                ),
+                reverse=True,
+            )
         return [
             candidate
             for candidate, _language_priority in ranked[:max_results]

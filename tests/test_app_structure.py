@@ -5,9 +5,11 @@ def app_text() -> str:
     return Path("app.py").read_text(encoding="utf-8")
 
 
-def test_app_has_no_deck_file_uploader() -> None:
+def test_app_has_project_file_uploader() -> None:
     app = app_text()
-    assert "st.file_uploader" not in app
+    assert "st.file_uploader" in app
+    assert "Guardar proyecto completo" in app
+    assert "Cargar proyecto" in app
     assert "Subir exportación del mazo" not in app
 
 
@@ -104,8 +106,9 @@ def test_validation_and_simplified_export_actions_exist() -> None:
 
 def test_output_can_be_generated_despite_errors_only_by_override() -> None:
     app = app_text()
-    assert "Generar aunque falten imágenes" in app
-    assert "generation_disabled = bool(validation.errors) and not override_errors" in app
+    assert "Generar aunque existan errores de preimpresión" in app
+    assert "validation.errors or critical_preflight" in app
+    assert ") and not override_errors" in app
     assert "disabled=generation_disabled" in app
 
 
@@ -323,8 +326,9 @@ def test_mpcfill_analysis_is_batched_per_deck() -> None:
 
 def test_analysis_engine_version_invalidates_stale_results() -> None:
     app = app_text()
-    assert 'ANALYSIS_ENGINE_VERSION = "dual-card-fix-v3"' in app
-    assert '"engine_version": ANALYSIS_ENGINE_VERSION' in app
+    assert 'ANALYSIS_ENGINE_VERSION = "workflow-v5"' in app
+    assert "analysis_signature_for_config(" in app
+    assert "engine_version=ANALYSIS_ENGINE_VERSION" in app
 
 
 
@@ -421,7 +425,7 @@ def test_multiple_decks_fill_pages_continuously() -> None:
 
 def test_build_version_identifies_multideck_download() -> None:
     app = app_text()
-    assert 'BUILD_VERSION = "2026.07.28-scryfall-newest-first-v4"' in app
+    assert 'BUILD_VERSION = "2026.07.28-workflow-v5"' in app
     assert '"Número de mazos"' in app
 
 
@@ -479,6 +483,46 @@ def test_version_caches_include_full_dual_card_identity() -> None:
 
 def test_scryfall_versions_are_explicitly_newest_first() -> None:
     app = app_text()
-    assert 'SCRYFALL_ALTERNATIVE_ORDER_VERSION = "released-desc-v1"' in app
-    assert "Orden de Scryfall: impresiones más nuevas primero." in app
+    assert 'SCRYFALL_ALTERNATIVE_ORDER_VERSION = "configurable-v2"' in app
+    assert '"Más nuevas primero"' in app
+    assert '"Más antiguas primero"' in app
+    assert '"Alta resolución primero"' in app
+    assert "sort_mode=sort_mode" in app
     assert "SCRYFALL_ALTERNATIVE_ORDER_VERSION" in app
+
+
+def test_workflow_v5_features_are_visible() -> None:
+    app = app_text()
+    assert '"Nombre del mazo (opcional)"' in app
+    assert '"Reintentar solo pendientes"' in app
+    assert '"Aplicar ajustes y reanalizar el mazo"' in app
+    assert '"Comprobación final (' in app
+    assert '"Mapa de posiciones de los mazos"' in app
+    assert '"Descargar mapa CSV"' in app
+    assert '"Descargar mapa PDF"' in app
+    assert 'preferred_group_breaks=(' in app
+    assert 'key="pdf_cut_lines"' in app
+    assert 'key="pdf_split_large"' in app
+
+
+def test_scryfall_selector_has_detailed_filters() -> None:
+    app = app_text()
+    assert '"Edición"' in app
+    assert '"Año"' in app
+    assert '"Artista"' in app
+    assert '"Tratamiento"' in app
+    assert '"Mostrar solo la edición indicada en la lista"' in app
+    assert "filter_scryfall_alternatives(" in app
+    assert "max_results=175" in app
+
+
+def test_single_deck_reanalysis_updates_only_its_configuration() -> None:
+    app = app_text()
+    assert '"Reanalizar o cambiar ajustes de este mazo"' in app
+    assert 'key=f"reanalysis_source_{position}"' in app
+    assert 'key=f"reanalysis_language_{position}"' in app
+    assert 'config_override=reanalysis_config' in app
+    assert 'updated_decks[deck_position] = config' in app
+    assert 'public_deck_settings(config)' in app
+    assert 'reviewed.discard(deck_position)' in app
+    assert '"Solo se modifica el mazo activo.' in app

@@ -99,3 +99,16 @@ def test_each_deck_can_include_sideboard_independently() -> None:
         "Commander Two",
         "Side B",
     ]
+
+
+def test_manual_deck_name_overrides_detected_commander() -> None:
+    result = parse_deck_configurations(
+        [
+            {
+                "decklist": "1 Commander One\n99 Forest",
+                "deck_name": "Mi mazo Partner",
+            }
+        ]
+    )
+
+    assert result.summaries[0].name == "Mi mazo Partner"

@@ -5,6 +5,7 @@ from typing import Any
 
 DEFAULT_DECK_SETTINGS: dict[str, Any] = {
     "decklist": "",
+    "deck_name": "",
     "preferred_image_source": "scryfall",
     "preferred_language": "es",
     "allow_language_fallback": True,
@@ -57,6 +58,7 @@ def normalise_deck_config(
     )
 
     config["decklist"] = str(config.get("decklist", ""))
+    config["deck_name"] = str(config.get("deck_name", "")).strip()
     config["allow_language_fallback"] = bool(
         config.get("allow_language_fallback", True)
     )

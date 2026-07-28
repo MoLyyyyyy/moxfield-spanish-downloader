@@ -105,7 +105,7 @@ def parse_deck_configurations(
         summaries.append(
             DeckSummary(
                 index=index,
-                name=cards[0].name,
+                name=config["deck_name"] or cards[0].name,
                 entries=len(cards),
                 copies=copies,
                 start_index=start_index,
