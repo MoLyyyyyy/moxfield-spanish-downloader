@@ -374,3 +374,21 @@ todas las calidades.
 - Se retiraron **Preparar todas las imágenes ahora** y el guardado/restauración
   manual de elecciones. Las imágenes se descargan durante la generación y las
   elecciones se conservan automáticamente en la sesión activa.
+
+
+## Fuente principal
+
+Ahora puedes elegir una **fuente principal** al analizar el mazo:
+
+- **Scryfall**: usa impresiones oficiales.
+- **MPCFill**: usa diseños de la comunidad.
+
+Si eliges **MPCFill**, Proxy Maker prioriza automáticamente, cuando existen
+para esa carta y ese idioma, diseños de estos autores:
+
+- MrTeferi
+- PsilosX
+- Chilli_Axe
+
+Si no hay ninguno disponible, continúa con el resto de diseños de MPCFill
+ordenados por DPI y prioridad.

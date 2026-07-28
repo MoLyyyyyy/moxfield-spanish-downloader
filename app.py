@@ -23,6 +23,7 @@ from mtg_downloader.decklist import parse_exported_decklist
 from mtg_downloader.image_processing import CROP_AUTO, CROP_FORCE, CROP_NONE
 from mtg_downloader.models import CardVariant, DeckCard, ImageFace, ResolvedCard
 from mtg_downloader.mpcfill import (
+    DEFAULT_PREFERRED_SOURCES,
     MpcFillClient,
     MpcFillError,
     mpc_candidate_key,
@@ -140,6 +141,30 @@ varias ilustraciones durante el paso de revisión.
 
     with right:
         st.subheader("Opciones de análisis")
+
+        source_labels = {
+            "Scryfall": "scryfall",
+            "MPCFill": "mpcfill",
+        }
+        saved_image_source = str(
+            saved_config.get("preferred_image_source", "scryfall")
+        )
+        if saved_image_source not in {"scryfall", "mpcfill"}:
+            saved_image_source = "scryfall"
+        current_source_label = (
+            "MPCFill" if saved_image_source == "mpcfill" else "Scryfall"
+        )
+        source_label = st.selectbox(
+            "Fuente principal",
+            options=list(source_labels),
+            index=list(source_labels).index(current_source_label),
+            help=(
+                "Scryfall usa imágenes oficiales. MPCFill usa diseños de la "
+                "comunidad y, si existen, prioriza automáticamente a "
+                "MrTeferi, PsilosX y Chilli_Axe."
+            ),
+        )
+        preferred_image_source = source_labels[source_label]
 
         language_labels = {
             "Español": "es",
@@ -268,6 +293,7 @@ varias ilustraciones durante el paso de revisión.
 
     analysis_config = {
         "decklist": decklist_text,
+        "preferred_image_source": preferred_image_source,
         "preferred_language": preferred_language,
         "allow_language_fallback": allow_language_fallback,
         "resolution_mode": resolution_mode,
@@ -279,6 +305,9 @@ varias ilustraciones durante el paso de revisión.
 else:
     analysis_config = saved_config
     decklist_text = str(analysis_config.get("decklist", ""))
+    preferred_image_source = str(
+        analysis_config.get("preferred_image_source", "scryfall")
+    )
     preferred_language = str(
         analysis_config.get("preferred_language", "es")
     )
@@ -303,6 +332,7 @@ else:
 def current_signature() -> str:
     payload = {
         "decklist": decklist_text,
+        "preferred_image_source": preferred_image_source,
         "preferred_language": preferred_language,
         "allow_language_fallback": allow_language_fallback,
         "resolution_mode": resolution_mode,
@@ -610,11 +640,16 @@ if app_step == 1 and analysis_submitted:
                 f"**{current_card_name['value']}**"
             )
 
-        with ScryfallClient(
-            cache_dir(),
-            image_quality=image_quality,
-            retry_callback=show_scryfall_retry,
-        ) as client:
+        if preferred_image_source == "mpcfill":
+            analysis_client = MpcFillClient(mpc_cache_dir())
+        else:
+            analysis_client = ScryfallClient(
+                cache_dir(),
+                image_quality=image_quality,
+                retry_callback=show_scryfall_retry,
+            )
+
+        with analysis_client as client:
             for index, card in enumerate(cards, start=1):
                 current_card_name["value"] = card.name
                 elapsed = int(time.monotonic() - started_at)
@@ -624,19 +659,36 @@ if app_step == 1 and analysis_submitted:
                     f"{elapsed // 60}:{elapsed % 60:02d}"
                 )
                 try:
-                    resolved = resolve_with_language_fallback(
-                        client,
-                        card,
-                        preferred_language=preferred_language,
-                        allow_language_fallback=allow_language_fallback,
-                        resolution_mode=resolution_mode,
-                        quality_mode=quality_mode,
-                    )
+                    if preferred_image_source == "mpcfill":
+                        resolved = client.resolve_auto(
+                            card,
+                            preferred_language=preferred_language,
+                            allow_language_fallback=allow_language_fallback,
+                            quality_mode=quality_mode,
+                            preferred_sources=DEFAULT_PREFERRED_SOURCES,
+                        )
+                    else:
+                        resolved = resolve_with_language_fallback(
+                            client,
+                            card,
+                            preferred_language=preferred_language,
+                            allow_language_fallback=allow_language_fallback,
+                            resolution_mode=resolution_mode,
+                            quality_mode=quality_mode,
+                        )
                 except ScryfallError as exc:
                     temporary_failures += 1
                     resolved = ResolvedCard(
                         source=card,
                         status="Error temporal de Scryfall",
+                        error=str(exc),
+                    )
+                except MpcFillError as exc:
+                    temporary_failures += 1
+                    resolved = ResolvedCard(
+                        source=card,
+                        status="Error temporal de MPCFill",
+                        provider="mpcfill",
                         error=str(exc),
                     )
                 resolved_cards.append(resolved)
@@ -1166,11 +1218,22 @@ def render_review_panel() -> None:
 
     with alternatives_col:
         st.markdown("#### Otras versiones")
+        source_options = [
+            "Oficiales · Scryfall",
+            "Comunidad · MPCFill",
+        ]
+        source_state_key = f"version_source_{selected_index}"
+        if source_state_key not in st.session_state:
+            st.session_state[source_state_key] = (
+                "Comunidad · MPCFill"
+                if preferred_image_source == "mpcfill"
+                else "Oficiales · Scryfall"
+            )
         source = st.radio(
             "Fuente",
-            ["Oficiales · Scryfall", "Comunidad · MPCFill"],
+            source_options,
             horizontal=True,
-            key=f"version_source_{selected_index}",
+            key=source_state_key,
         )
 
         primary_language = (
@@ -1358,6 +1421,7 @@ def render_review_panel() -> None:
                                 languages=languages,
                                 minimum_dpi=minimum_dpi,
                                 max_results=visible_limit,
+                                preferred_sources=DEFAULT_PREFERRED_SOURCES,
                             )
                     designs = cache.get(cache_key, [])
                     if not designs:

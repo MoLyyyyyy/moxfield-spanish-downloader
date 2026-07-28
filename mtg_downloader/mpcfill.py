@@ -16,6 +16,11 @@ from .image_processing import (
 from .models import DeckCard, ImageFace, ResolvedCard
 
 MPCFILL_BASE_URL = "https://mpcfill.com"
+DEFAULT_PREFERRED_SOURCES = (
+    "MrTeferi",
+    "PsilosX",
+    "Chilli_Axe",
+)
 
 
 class MpcFillError(RuntimeError):
@@ -66,6 +71,7 @@ class MpcFillClient:
         minimum_dpi: int = 300,
         max_results: int = 9,
         card_type: str = "CARD",
+        preferred_sources: tuple[str, ...] = (),
     ) -> list[dict[str, Any]]:
         if max_results < 1:
             return []
@@ -101,12 +107,92 @@ class MpcFillClient:
         ]
         candidates.sort(
             key=lambda candidate: (
+                _preferred_source_rank(candidate, preferred_sources),
                 -int(candidate.get("dpi") or 0),
                 int(candidate.get("priority") or 9999),
+                _source_name(candidate).casefold(),
                 str(candidate.get("name") or "").casefold(),
             )
         )
         return candidates[:max_results]
+
+
+    def resolve_auto(
+        self,
+        card: DeckCard,
+        *,
+        preferred_language: str = "es",
+        allow_language_fallback: bool = True,
+        quality_mode: str = "prefer_highres",
+        preferred_sources: tuple[str, ...] = DEFAULT_PREFERRED_SOURCES,
+        type_line: str | None = None,
+    ) -> ResolvedCard:
+        if preferred_language not in {"es", "en"}:
+            preferred_language = "es"
+
+        minimum_dpi = {
+            "allow_lowres": 300,
+            "prefer_highres": 600,
+            "highres_only": 800,
+        }.get(quality_mode, 600)
+
+        languages_to_try = [preferred_language]
+        if allow_language_fallback:
+            fallback = "en" if preferred_language == "es" else "es"
+            if fallback not in languages_to_try:
+                languages_to_try.append(fallback)
+
+        for language in languages_to_try:
+            designs = self.search_designs(
+                card.name,
+                languages=(language.upper(),),
+                minimum_dpi=minimum_dpi,
+                max_results=24,
+                preferred_sources=preferred_sources,
+            )
+            if not designs:
+                continue
+
+            candidate = designs[0]
+            result = self.resolve_candidate(
+                card,
+                candidate,
+                crop_mode=CROP_AUTO,
+                type_line=type_line,
+            )
+
+            source = _source_name(candidate)
+            language_label = "español" if language == "es" else "inglés"
+            preferred_suffix = (
+                " preferido"
+                if _preferred_source_rank(candidate, preferred_sources)
+                < len(preferred_sources)
+                else ""
+            )
+            fallback_suffix = (
+                f" (respaldo en {language_label})"
+                if language != preferred_language
+                else ""
+            )
+            result.status = (
+                f"Diseño MPCFill{preferred_suffix}{fallback_suffix}"
+            )
+            return result
+
+        return ResolvedCard(
+            source=card,
+            status=(
+                "Sin alta resolución"
+                if quality_mode == "highres_only"
+                else "No encontrada"
+            ),
+            provider="mpcfill",
+            type_line=type_line,
+            error=(
+                "MPCFill no encontró una imagen con la calidad e idioma "
+                "solicitados."
+            ),
+        )
 
     def search_cardbacks(
         self,
@@ -121,6 +207,7 @@ class MpcFillClient:
             minimum_dpi=minimum_dpi,
             max_results=max_results,
             card_type="CARDBACK",
+            preferred_sources=(),
         )
 
     def preview_bytes(
@@ -391,6 +478,34 @@ class MpcFillClient:
 
         path.write_bytes(response.content)
         return response.content
+
+
+
+
+def _source_name(candidate: dict[str, Any]) -> str:
+    return str(
+        candidate.get("sourceName")
+        or candidate.get("sourceVerbose")
+        or candidate.get("source")
+        or ""
+    ).strip()
+
+
+def _normalise_source_name(value: str) -> str:
+    return re.sub(r"[\s_-]+", "", value.casefold()).strip()
+
+
+def _preferred_source_rank(
+    candidate: dict[str, Any],
+    preferred_sources: tuple[str, ...],
+) -> int:
+    if not preferred_sources:
+        return 9999
+    source_name = _normalise_source_name(_source_name(candidate))
+    for index, preferred in enumerate(preferred_sources):
+        if source_name == _normalise_source_name(str(preferred)):
+            return index
+    return len(preferred_sources) + 1
 
 
 def mpc_candidate_key(candidate: dict[str, Any]) -> str:

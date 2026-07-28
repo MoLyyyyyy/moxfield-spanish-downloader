@@ -278,3 +278,14 @@ def test_healthy_cards_are_collapsed() -> None:
     assert 'f"Ver {len(healthy_indices)} cartas correctas"' in app
     assert 'expanded=False' in app
     assert 'st.success("No hay cartas con problemas.")' in app
+
+
+
+def test_primary_source_selector_exists() -> None:
+    app = app_text()
+    assert '"Fuente principal"' in app
+    assert '"Scryfall"' in app
+    assert '"MPCFill"' in app
+    assert "MrTeferi, PsilosX y Chilli_Axe" in app
+    assert '"preferred_image_source"' in app
+    assert "client.resolve_auto(" in app
