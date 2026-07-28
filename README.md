@@ -392,3 +392,15 @@ para esa carta y ese idioma, diseños de estos autores:
 
 Si no hay ninguno disponible, continúa con el resto de diseños de MPCFill
 ordenados por DPI y prioridad.
+
+
+### Corrección de búsqueda automática MPCFill
+
+La búsqueda usa primero el endpoint actual de MPCFill y conserva compatibilidad
+con el endpoint antiguo. Los autores preferidos se colocan al principio del
+orden de fuentes antes de ejecutar la búsqueda.
+
+**Preferir alta resolución** prueba primero 600 DPI y, cuando no encuentra
+resultado, acepta diseños desde 300 DPI. **Buscar en cualquier edición** activa
+la búsqueda flexible de MPCFill y no restringe por edición o número de
+coleccionista.

@@ -22,6 +22,9 @@ def test_search_and_resolve_mpcfill_design(tmp_path: Path) -> None:
                 },
             )
 
+        if request.url.path == "/3/editorSearch/":
+            return httpx.Response(404, json={"name": "Not found"})
+
         if request.url.path == "/2/editorSearch/":
             payload = json.loads(request.content)
             seen_payloads["search"] = payload
@@ -108,6 +111,9 @@ def test_search_cardbacks_uses_cardback_type(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/2/sources/":
             return httpx.Response(200, json={"results": {"1": {"pk": 1}}})
+        if request.url.path == "/3/editorSearch/":
+            return httpx.Response(404, json={"name": "Not found"})
+
         if request.url.path == "/2/editorSearch/":
             payload = json.loads(request.content)
             seen["payload"] = payload

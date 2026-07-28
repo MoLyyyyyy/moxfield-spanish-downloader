@@ -72,6 +72,9 @@ class MpcFillClient:
         max_results: int = 9,
         card_type: str = "CARD",
         preferred_sources: tuple[str, ...] = (),
+        fuzzy_search: bool = False,
+        expansion_code: str | None = None,
+        collector_number: str | None = None,
     ) -> list[dict[str, Any]]:
         if max_results < 1:
             return []
@@ -81,41 +84,55 @@ class MpcFillClient:
             languages=languages,
             minimum_dpi=minimum_dpi,
             card_type=card_type,
+            preferred_sources=preferred_sources,
+            fuzzy_search=fuzzy_search,
+            expansion_code=expansion_code,
+            collector_number=collector_number,
         )
         if not identifiers:
             return []
 
-        # La API de cards admite hasta 1000, pero para una sola carta no es
-        # necesario descargar cientos de metadatos.
-        cards = self._get_cards(identifiers[:120])
         language_set = {language.upper() for language in languages}
+        candidates: list[dict[str, Any]] = []
 
-        candidates = [
-            self._normalise_candidate(candidate)
-            for candidate in cards
-            if isinstance(candidate, dict)
-        ]
-        candidates = [
-            candidate
-            for candidate in candidates
-            if candidate.get("download_url")
-            and int(candidate.get("dpi") or 0) >= minimum_dpi
-            and (
-                not language_set
-                or str(candidate.get("language") or "").upper() in language_set
+        # MPCFill returns identifiers following the configured source order.
+        # Fetch progressively instead of discarding every identifier after
+        # position 120, which could hide a preferred creator entirely.
+        identifiers = identifiers[:1000]
+        batch_size = 200
+        for batch_start in range(0, len(identifiers), batch_size):
+            cards = self._get_cards(
+                identifiers[batch_start : batch_start + batch_size]
             )
-        ]
+            for raw_candidate in cards:
+                if not isinstance(raw_candidate, dict):
+                    continue
+                candidate = self._normalise_candidate(raw_candidate)
+                if not candidate.get("download_url"):
+                    continue
+                if int(candidate.get("dpi") or 0) < minimum_dpi:
+                    continue
+                if (
+                    language_set
+                    and str(candidate.get("language") or "").upper()
+                    not in language_set
+                ):
+                    continue
+                candidates.append(candidate)
+
+            if len(candidates) >= max_results:
+                break
+
         candidates.sort(
             key=lambda candidate: (
                 _preferred_source_rank(candidate, preferred_sources),
                 -int(candidate.get("dpi") or 0),
-                int(candidate.get("priority") or 9999),
+                -int(candidate.get("priority") or 0),
                 _source_name(candidate).casefold(),
                 str(candidate.get("name") or "").casefold(),
             )
         )
         return candidates[:max_results]
-
 
     def resolve_auto(
         self,
@@ -123,61 +140,133 @@ class MpcFillClient:
         *,
         preferred_language: str = "es",
         allow_language_fallback: bool = True,
+        resolution_mode: str = "exact_first",
         quality_mode: str = "prefer_highres",
         preferred_sources: tuple[str, ...] = DEFAULT_PREFERRED_SOURCES,
         type_line: str | None = None,
     ) -> ResolvedCard:
         if preferred_language not in {"es", "en"}:
             preferred_language = "es"
-
-        minimum_dpi = {
-            "allow_lowres": 300,
-            "prefer_highres": 600,
-            "highres_only": 800,
-        }.get(quality_mode, 600)
+        if resolution_mode not in {"exact_first", "exact_only", "flexible"}:
+            resolution_mode = "exact_first"
 
         languages_to_try = [preferred_language]
         if allow_language_fallback:
             fallback = "en" if preferred_language == "es" else "es"
-            if fallback not in languages_to_try:
-                languages_to_try.append(fallback)
+            languages_to_try.append(fallback)
 
+        dpi_attempts = {
+            "allow_lowres": (300,),
+            # A preference is not a hard minimum: try 600 first and then
+            # accept a printable design from 300 DPI.
+            "prefer_highres": (600, 300),
+            "highres_only": (800,),
+        }.get(quality_mode, (600, 300))
+
+        has_printing = bool(card.set_code and card.collector_number)
+        search_modes: list[tuple[bool, str | None, str | None]]
+        if resolution_mode == "exact_only":
+            if not has_printing:
+                return ResolvedCard(
+                    source=card,
+                    status="Sin impresión exacta",
+                    provider="mpcfill",
+                    type_line=type_line,
+                    error=(
+                        "La carta no incluye edición y número de "
+                        "coleccionista en la lista."
+                    ),
+                )
+            search_modes = [
+                (False, card.set_code, card.collector_number),
+            ]
+        elif resolution_mode == "exact_first":
+            search_modes = []
+            if has_printing:
+                search_modes.append(
+                    (False, card.set_code, card.collector_number)
+                )
+            search_modes.append((False, None, None))
+        else:
+            # Any edition means no printing restriction and fuzzy matching.
+            search_modes = [(True, None, None)]
+
+        names_to_try = [card.name]
+        if " // " in card.name:
+            front_name = card.name.split(" // ", 1)[0].strip()
+            if front_name and front_name not in names_to_try:
+                names_to_try.append(front_name)
+
+        attempted: set[tuple[object, ...]] = set()
         for language in languages_to_try:
-            designs = self.search_designs(
-                card.name,
-                languages=(language.upper(),),
-                minimum_dpi=minimum_dpi,
-                max_results=24,
-                preferred_sources=preferred_sources,
-            )
-            if not designs:
-                continue
+            # Exact printing remains ahead of a different printing even when
+            # the latter has more DPI.
+            for fuzzy_search, expansion_code, collector_number in search_modes:
+                for minimum_dpi in dpi_attempts:
+                    for name in names_to_try:
+                        attempt_key = (
+                            language,
+                            minimum_dpi,
+                            fuzzy_search,
+                            expansion_code,
+                            collector_number,
+                            name.casefold(),
+                        )
+                        if attempt_key in attempted:
+                            continue
+                        attempted.add(attempt_key)
 
-            candidate = designs[0]
-            result = self.resolve_candidate(
-                card,
-                candidate,
-                crop_mode=CROP_AUTO,
-                type_line=type_line,
-            )
+                        designs = self.search_designs(
+                            name,
+                            languages=(language.upper(),),
+                            minimum_dpi=minimum_dpi,
+                            max_results=24,
+                            preferred_sources=preferred_sources,
+                            fuzzy_search=fuzzy_search,
+                            expansion_code=expansion_code,
+                            collector_number=collector_number,
+                        )
+                        if not designs:
+                            continue
 
-            source = _source_name(candidate)
-            language_label = "español" if language == "es" else "inglés"
-            preferred_suffix = (
-                " preferido"
-                if _preferred_source_rank(candidate, preferred_sources)
-                < len(preferred_sources)
-                else ""
-            )
-            fallback_suffix = (
-                f" (respaldo en {language_label})"
-                if language != preferred_language
-                else ""
-            )
-            result.status = (
-                f"Diseño MPCFill{preferred_suffix}{fallback_suffix}"
-            )
-            return result
+                        candidate = designs[0]
+                        result = self.resolve_candidate(
+                            card,
+                            candidate,
+                            crop_mode=CROP_AUTO,
+                            type_line=type_line,
+                        )
+
+                        language_label = (
+                            "español" if language == "es" else "inglés"
+                        )
+                        preferred_suffix = (
+                            " preferido"
+                            if _preferred_source_rank(
+                                candidate,
+                                preferred_sources,
+                            )
+                            < len(preferred_sources)
+                            else ""
+                        )
+                        fallback_suffix = (
+                            f" (respaldo en {language_label})"
+                            if language != preferred_language
+                            else ""
+                        )
+                        dpi_suffix = (
+                            " · calidad de respaldo"
+                            if (
+                                quality_mode == "prefer_highres"
+                                and minimum_dpi == 300
+                            )
+                            else ""
+                        )
+                        result.status = (
+                            f"Diseño MPCFill{preferred_suffix}"
+                            f"{fallback_suffix}{dpi_suffix}"
+                        )
+                        return result
 
         return ResolvedCard(
             source=card,
@@ -189,8 +278,8 @@ class MpcFillClient:
             provider="mpcfill",
             type_line=type_line,
             error=(
-                "MPCFill no encontró una imagen con la calidad e idioma "
-                "solicitados."
+                "MPCFill no encontró una imagen con la edición, idioma y "
+                "calidad solicitados."
             ),
         )
 
@@ -306,37 +395,77 @@ class MpcFillClient:
         languages: tuple[str, ...],
         minimum_dpi: int,
         card_type: str = "CARD",
+        preferred_sources: tuple[str, ...] = (),
+        fuzzy_search: bool = False,
+        expansion_code: str | None = None,
+        collector_number: str | None = None,
     ) -> list[str]:
         query = _normalise_query(name)
-        payload = {
-            "searchSettings": {
-                "searchTypeSettings": {
-                    "fuzzySearch": False,
-                    "filterCardbacks": card_type == "CARDBACK",
-                },
-                "sourceSettings": {
-                    "sources": self._source_rows(),
-                },
-                "filterSettings": {
-                    "minimumDPI": minimum_dpi,
-                    "maximumDPI": 1500,
-                    "maximumSize": 30,
-                    "languages": [language.upper() for language in languages],
-                    "includesTags": [],
-                    "excludesTags": ["NSFW"],
-                },
+        search_settings = {
+            "searchTypeSettings": {
+                "fuzzySearch": fuzzy_search,
+                "filterCardbacks": card_type == "CARDBACK",
             },
-            "queries": [
-                {
-                    "query": query,
-                    "cardType": card_type,
-                }
-            ],
+            "sourceSettings": {
+                "sources": self._source_rows(preferred_sources),
+            },
+            "filterSettings": {
+                "minimumDPI": minimum_dpi,
+                "maximumDPI": 1500,
+                "maximumSize": 30,
+                "languages": [
+                    language.upper() for language in languages
+                ],
+                "includesTags": [],
+                "excludesTags": ["NSFW"],
+            },
+        }
+        search_query: dict[str, Any] = {
+            "query": query,
+            "cardType": card_type,
+        }
+        if expansion_code:
+            search_query["expansionCode"] = expansion_code.upper()
+        if collector_number:
+            search_query["collectorNumber"] = collector_number
+
+        query_key = hashlib.sha256(
+            json.dumps(
+                search_query,
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()[:24]
+        current_payload = {
+            "searchSettings": search_settings,
+            "queries": {query_key: search_query},
+        }
+
+        try:
+            response = self._request_json(
+                "3/editorSearch/",
+                method="POST",
+                payload=current_payload,
+            )
+            results = response.get("results")
+            if isinstance(results, dict):
+                identifiers = results.get(query_key)
+                if isinstance(identifiers, list):
+                    return list(
+                        dict.fromkeys(str(value) for value in identifiers)
+                    )
+        except MpcFillError:
+            # Compatibility with older/self-hosted backends.
+            pass
+
+        legacy_payload = {
+            "searchSettings": search_settings,
+            "queries": [search_query],
         }
         response = self._request_json(
             "2/editorSearch/",
             method="POST",
-            payload=payload,
+            payload=legacy_payload,
         )
         results = response.get("results")
         if not isinstance(results, dict):
@@ -346,9 +475,10 @@ class MpcFillClient:
         if isinstance(direct, dict):
             identifiers = direct.get(card_type)
             if isinstance(identifiers, list):
-                return [str(value) for value in identifiers]
+                return list(
+                    dict.fromkeys(str(value) for value in identifiers)
+                )
 
-        # Respaldo para backends que normalizan la consulta de otra manera.
         found: list[str] = []
         for value in results.values():
             if not isinstance(value, dict):
@@ -358,39 +488,74 @@ class MpcFillClient:
                 found.extend(str(identifier) for identifier in identifiers)
         return list(dict.fromkeys(found))
 
-    def _source_rows(self) -> list[list[int | bool]]:
-        cache_path = self.json_cache / "sources.json"
+    def _source_rows(
+        self,
+        preferred_sources: tuple[str, ...] = (),
+    ) -> list[list[int | bool]]:
+        sources = self._source_documents()
+        prepared: list[tuple[int, int, int]] = []
+
+        for original_index, (key, source) in enumerate(sources.items()):
+            primary_key: Any = key
+            source_name = str(key)
+            if isinstance(source, dict):
+                primary_key = source.get("pk", key)
+                source_name = str(
+                    source.get("name")
+                    or source.get("key")
+                    or key
+                )
+            try:
+                pk = int(primary_key)
+            except (TypeError, ValueError):
+                continue
+
+            prepared.append(
+                (
+                    _preferred_name_rank(
+                        source_name,
+                        preferred_sources,
+                    ),
+                    original_index,
+                    pk,
+                )
+            )
+
+        if not prepared:
+            raise MpcFillError(
+                "MPCFill no tiene fuentes de imágenes disponibles."
+            )
+
+        prepared.sort(key=lambda row: (row[0], row[1]))
+        return [[pk, True] for _, _, pk in prepared]
+
+    def _source_documents(self) -> dict[str, Any]:
+        # The previous cache stored only numeric rows and therefore lost the
+        # creator names required for source ordering.
+        cache_path = self.json_cache / "sources-v2.json"
         if cache_path.exists() and cache_path.stat().st_size > 0:
             try:
                 cached = json.loads(cache_path.read_text(encoding="utf-8"))
-                if isinstance(cached, list) and cached:
+                if isinstance(cached, dict) and cached:
                     return cached
             except (OSError, json.JSONDecodeError):
-                pass
+                cache_path.unlink(missing_ok=True)
 
         response = self._request_json("2/sources/")
         results = response.get("results")
         if not isinstance(results, dict):
-            raise MpcFillError("MPCFill no devolvió su lista de fuentes.")
+            raise MpcFillError(
+                "MPCFill no devolvió su lista de fuentes."
+            )
 
-        rows: list[list[int | bool]] = []
-        for key, source in results.items():
-            primary_key: Any = key
-            if isinstance(source, dict):
-                primary_key = source.get("pk", key)
-            try:
-                rows.append([int(primary_key), True])
-            except (TypeError, ValueError):
-                continue
-
-        if not rows:
-            raise MpcFillError("MPCFill no tiene fuentes de imágenes disponibles.")
-
-        cache_path.write_text(
-            json.dumps(rows, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        return rows
+        try:
+            cache_path.write_text(
+                json.dumps(results, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+        return results
 
     def _get_cards(self, identifiers: list[str]) -> list[dict[str, Any]]:
         cards: list[dict[str, Any]] = []
@@ -495,19 +660,33 @@ def _normalise_source_name(value: str) -> str:
     return re.sub(r"[\s_-]+", "", value.casefold()).strip()
 
 
-def _preferred_source_rank(
-    candidate: dict[str, Any],
+def _preferred_name_rank(
+    source_name: str,
     preferred_sources: tuple[str, ...],
 ) -> int:
     if not preferred_sources:
         return 9999
-    source_name = _normalise_source_name(_source_name(candidate))
+
+    normalised_source = _normalise_source_name(source_name)
     for index, preferred in enumerate(preferred_sources):
-        if source_name == _normalise_source_name(str(preferred)):
+        normalised_preferred = _normalise_source_name(str(preferred))
+        if (
+            normalised_source == normalised_preferred
+            or normalised_preferred in normalised_source
+            or normalised_source in normalised_preferred
+        ):
             return index
     return len(preferred_sources) + 1
 
 
+def _preferred_source_rank(
+    candidate: dict[str, Any],
+    preferred_sources: tuple[str, ...],
+) -> int:
+    return _preferred_name_rank(
+        _source_name(candidate),
+        preferred_sources,
+    )
 def mpc_candidate_key(candidate: dict[str, Any]) -> str:
     identifier = candidate.get("identifier")
     if identifier:

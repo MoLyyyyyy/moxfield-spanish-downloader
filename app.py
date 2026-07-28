@@ -664,6 +664,7 @@ if app_step == 1 and analysis_submitted:
                             card,
                             preferred_language=preferred_language,
                             allow_language_fallback=allow_language_fallback,
+                            resolution_mode=resolution_mode,
                             quality_mode=quality_mode,
                             preferred_sources=DEFAULT_PREFERRED_SOURCES,
                         )
@@ -1422,6 +1423,7 @@ def render_review_panel() -> None:
                                 minimum_dpi=minimum_dpi,
                                 max_results=visible_limit,
                                 preferred_sources=DEFAULT_PREFERRED_SOURCES,
+                                fuzzy_search=True,
                             )
                     designs = cache.get(cache_key, [])
                     if not designs:

@@ -289,3 +289,10 @@ def test_primary_source_selector_exists() -> None:
     assert "MrTeferi, PsilosX y Chilli_Axe" in app
     assert '"preferred_image_source"' in app
     assert "client.resolve_auto(" in app
+
+
+
+def test_mpcfill_analysis_respects_resolution_mode() -> None:
+    app = app_text()
+    assert "resolution_mode=resolution_mode" in app
+    assert "fuzzy_search=True" in app
