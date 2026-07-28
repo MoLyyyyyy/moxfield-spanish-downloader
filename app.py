@@ -69,6 +69,7 @@ from mtg_downloader.project_io import (
     analysis_signature_for_config,
     export_project,
     import_project,
+    project_selection_summary,
     project_session_state,
 )
 from mtg_downloader.profile_resolution import resolve_with_language_fallback
@@ -102,7 +103,7 @@ st.set_page_config(
 st.title("🃏 Proxy Maker")
 
 ANALYSIS_ENGINE_VERSION = "workflow-v5"
-BUILD_VERSION = "2026.07.28-workflow-v5.1-import-hotfix"
+BUILD_VERSION = "2026.07.28-workflow-v5.2-project-state-fix"
 SCRYFALL_ALTERNATIVE_ORDER_VERSION = "configurable-v2"
 
 
@@ -136,8 +137,19 @@ def restore_project_state(uploaded_data: bytes) -> None:
     for key, value in project.pdf_settings.items():
         if key in PROJECT_PDF_SETTING_KEYS:
             st.session_state[key] = value
+    summary = project.selection_summary
     st.session_state["flash_message"] = (
-        "Proyecto cargado: listas, versiones, recortes y revisión restaurados."
+        "Proyecto cargado y verificado: "
+        f"{summary['entries']} entradas, "
+        f"{summary['manual_entries']} selecciones manuales, "
+        f"{summary['mixed_entries']} repartos y "
+        f"{summary['crop_adjustments']} ajustes de recorte restaurados."
+    )
+
+
+def mark_project_changed() -> None:
+    st.session_state["project_revision"] = (
+        int(st.session_state.get("project_revision") or 0) + 1
     )
 
 
@@ -178,7 +190,13 @@ def current_project_bytes() -> bytes | None:
         ),
         pdf_settings=stored_pdf_settings(),
         build_version=BUILD_VERSION,
+        project_revision=int(
+            st.session_state.get("project_revision") or 0
+        ),
     )
+
+if "project_revision" not in st.session_state:
+    st.session_state["project_revision"] = 0
 
 if "app_step" not in st.session_state:
     st.session_state["app_step"] = (
@@ -242,17 +260,29 @@ with st.expander("💾 Guardar o cargar proyecto", expanded=False):
 
     project_data = current_project_bytes()
     if project_data is not None:
+        project_revision = int(
+            st.session_state.get("project_revision") or 0
+        )
         st.download_button(
             "Guardar proyecto completo",
             data=project_data,
-            file_name="proxy-maker-project.json",
+            file_name=(
+                f"proxy-maker-project-r{project_revision}.json"
+            ),
             mime="application/json",
             width="stretch",
             on_click="ignore",
         )
+        selection_summary = project_selection_summary(
+            list(st.session_state.get("resolved_cards") or [])
+        )
         st.caption(
-            "El proyecto no incluye las imágenes descargadas, pero sí sus "
-            "URLs y todas las decisiones de revisión."
+            f"Estado actual R{project_revision}: "
+            f"{selection_summary['manual_entries']} selecciones manuales, "
+            f"{selection_summary['mixed_entries']} repartos y "
+            f"{selection_summary['crop_adjustments']} recortes. "
+            "El JSON incluye una huella que verifica que las versiones "
+            "se restauran sin alteraciones."
         )
 
 saved_config = dict(st.session_state.get("analysis_config") or {})
@@ -799,6 +829,7 @@ def save_replacement(
         updated = replace_all_copies(current, enforce_automatic_mpcfill_crop(replacement))
     cards[index] = updated
     st.session_state["resolved_cards"] = cards
+    mark_project_changed()
     prefetch_selection(updated, index)
     if advance_indices:
         set_review_index(next_index(advance_indices, index))
@@ -833,6 +864,7 @@ def update_mpc_crop(
         card.scryfall_data = copy.deepcopy(primary.metadata)
     cards[index] = card
     st.session_state["resolved_cards"] = cards
+    mark_project_changed()
     prefetch_selection(card, index)
     clear_generated_output()
 
@@ -901,6 +933,7 @@ def apply_bulk_action(indices: list[int], action: str) -> None:
                 progress.progress(position / len(indices))
 
         st.session_state["resolved_cards"] = cards
+        mark_project_changed()
         clear_generated_output()
         status.success(f"Acción aplicada a {len(indices)} entradas.")
     except (ScryfallError, MpcFillError, OSError, AllocationError) as exc:
@@ -1068,6 +1101,7 @@ def reanalyse_active_deck(
             ),
         }
         st.session_state["deck_analysis_stats"] = deck_stats
+        mark_project_changed()
         reviewed = {
             int(value)
             for value in st.session_state.get("reviewed_decks", [])
@@ -1306,6 +1340,7 @@ if app_step == 1 and analysis_submitted:
         progress.progress(1.0)
         st.session_state["cards"] = cards
         st.session_state["resolved_cards"] = resolved_cards
+        st.session_state["project_revision"] = 0
         st.session_state["deck_summaries"] = (
             serialise_deck_summaries(
                 multi_deck_result,
@@ -1424,7 +1459,7 @@ def render_bulk_panel(filtered: list[int]) -> None:
             key=f"bulk_apply_{deck_position}",
         ):
             apply_bulk_action(selected_indices, action)
-            st.rerun(scope="fragment")
+            st.rerun()
 
 
 def render_gallery_grouped_section(
@@ -1469,7 +1504,7 @@ def render_gallery_grouped_section(
                             width="stretch",
                         ):
                             open_card_editor(index)
-                            st.rerun(scope="fragment")
+                            st.rerun()
         st.divider()
 
 
@@ -1734,7 +1769,7 @@ def render_crop_editor(index: int, card: ResolvedCard) -> None:
         if st.button("Guardar ajuste de recorte", width="stretch"):
             update_mpc_crop(index, shift_x=shift_x, shift_y=shift_y)
             st.success("Ajuste guardado. Las imágenes MPCFill seguirán recortándose automáticamente.")
-            st.rerun(scope="fragment")
+            st.rerun()
 
 
 def render_allocations(index: int, card: ResolvedCard) -> None:
@@ -1797,8 +1832,9 @@ def render_allocations(index: int, card: ResolvedCard) -> None:
                         remove_variant(updated, variant_index)
                         cards[index] = updated
                         st.session_state["resolved_cards"] = cards
+                        mark_project_changed()
                         clear_generated_output()
-                        st.rerun(scope="fragment")
+                        st.rerun()
                     except AllocationError as exc:
                         st.error(str(exc))
         if st.button("Guardar reparto", width="stretch"):
@@ -1808,9 +1844,10 @@ def render_allocations(index: int, card: ResolvedCard) -> None:
                 set_allocation_quantities(updated, quantities)
                 cards[index] = updated
                 st.session_state["resolved_cards"] = cards
+                mark_project_changed()
                 clear_generated_output()
                 st.success("Reparto guardado.")
-                st.rerun(scope="fragment")
+                st.rerun()
             except AllocationError as exc:
                 st.error(str(exc))
 
@@ -1831,7 +1868,7 @@ def render_candidate_actions(
                 width="stretch",
             ):
                 save_replacement(index, replacement, advance_indices=review_indices)
-                st.rerun(scope="fragment")
+                st.rerun()
         with add_mix:
             if st.button(
                 "Añadir al reparto",
@@ -1840,7 +1877,7 @@ def render_candidate_actions(
             ):
                 save_replacement(index, replacement, add_to_mix=True)
                 st.success("Ilustración añadida al reparto con una copia.")
-                st.rerun(scope="fragment")
+                st.rerun()
     else:
         if st.button(
             "Elegir y continuar",
@@ -1848,7 +1885,7 @@ def render_candidate_actions(
             width="stretch",
         ):
             save_replacement(index, replacement, advance_indices=review_indices)
-            st.rerun(scope="fragment")
+            st.rerun()
 
 
 def render_review_panel() -> None:
@@ -1866,7 +1903,7 @@ def render_review_panel() -> None:
     with back_col:
         if st.button("← Volver al mazo", width="stretch"):
             set_workspace_mode("Vista del mazo")
-            st.rerun(scope="fragment")
+            st.rerun()
     with title_col:
         st.subheader(
             f"Editar versiones · Mazo {deck_position + 1}: "
@@ -1932,7 +1969,7 @@ def render_review_panel() -> None:
     with nav[0]:
         if st.button("← Anterior", disabled=position == 0, width="stretch"):
             set_review_index(previous_index(review_indices, selected_index))
-            st.rerun(scope="fragment")
+            st.rerun()
     with nav[1]:
         if st.button(
             "Mantener actual y continuar",
@@ -1940,7 +1977,7 @@ def render_review_panel() -> None:
             width="stretch",
         ):
             set_review_index(next_index(review_indices, selected_index))
-            st.rerun(scope="fragment")
+            st.rerun()
     with nav[2]:
         if st.button(
             "Siguiente →",
@@ -1948,7 +1985,7 @@ def render_review_panel() -> None:
             width="stretch",
         ):
             set_review_index(next_index(review_indices, selected_index))
-            st.rerun(scope="fragment")
+            st.rerun()
 
     selected = cards[selected_index]
     st.caption(
@@ -2215,7 +2252,7 @@ def render_review_panel() -> None:
                         visible_limit + 12,
                         len(filtered_alternatives),
                     )
-                    st.rerun(scope="fragment")
+                    st.rerun()
 
         else:
             inherited_dpi = {
@@ -2340,7 +2377,7 @@ def render_review_panel() -> None:
                             st.session_state[visible_key] = (
                                 visible_limit + 12
                             )
-                            st.rerun(scope="fragment")
+                            st.rerun()
             except MpcFillError as exc:
                 st.warning(f"MPCFill no está disponible: {exc}")
 

@@ -23,10 +23,11 @@ def test_app_has_visual_deck_and_editor() -> None:
     assert "Elegir y continuar" in app
 
 
-def test_workspace_uses_fragment_navigation() -> None:
+def test_workspace_refreshes_full_app_after_navigation() -> None:
     app = app_text()
     assert "@st.fragment\ndef render_workspace()" in app
-    assert 'st.rerun(scope="fragment")' in app
+    assert 'st.rerun(scope="fragment")' not in app
+    assert "st.rerun()" in app
     assert "← Volver al mazo" in app
     assert "← Anterior" in app
     assert "Siguiente →" in app
@@ -425,7 +426,7 @@ def test_multiple_decks_fill_pages_continuously() -> None:
 
 def test_build_version_identifies_multideck_download() -> None:
     app = app_text()
-    assert 'BUILD_VERSION = "2026.07.28-workflow-v5.1-import-hotfix"' in app
+    assert 'BUILD_VERSION = "2026.07.28-workflow-v5.2-project-state-fix"' in app
     assert '"Número de mazos"' in app
 
 
@@ -526,3 +527,23 @@ def test_single_deck_reanalysis_updates_only_its_configuration() -> None:
     assert 'public_deck_settings(config)' in app
     assert 'reviewed.discard(deck_position)' in app
     assert '"Solo se modifica el mazo activo.' in app
+
+
+
+def test_project_json_refreshes_after_version_changes() -> None:
+    app = app_text()
+    assert "def mark_project_changed() -> None:" in app
+    assert 'st.session_state["project_revision"]' in app
+    assert "project_revision=int(" in app
+    assert "proxy-maker-project-r{project_revision}.json" in app
+    assert "st.rerun(scope=\"fragment\")" not in app
+    assert "mark_project_changed()" in app
+    assert "huella que verifica que las versiones" in app
+
+
+def test_loaded_project_reports_restored_manual_versions() -> None:
+    app = app_text()
+    assert "project.selection_summary" in app
+    assert "selecciones manuales" in app
+    assert "repartos" in app
+    assert "ajustes de recorte restaurados" in app

@@ -1,5 +1,5 @@
 Proxy Maker
-Build: 2026.07.28-workflow-v5.1-import-hotfix
+Build: 2026.07.28-workflow-v5.2-project-state-fix
 Fecha: 2026-07-28
 
 Incluye todas las correcciones anteriores y estas mejoras de flujo:
@@ -28,3 +28,13 @@ Hotfix v5.1:
   actualización sobre archivos antiguos.
 - Se mantiene la función en review.py por compatibilidad.
 - El paquete se verifica arrancando Streamlit desde una extracción limpia.
+
+
+Corrección de proyectos v5.2:
+- Los cambios de versión fuerzan una actualización completa de Streamlit.
+- El botón de guardar ya no conserva un JSON anterior a la última corrección.
+- Cada cambio aumenta la revisión R del proyecto.
+- El JSON incluye una huella SHA-256 de todas las versiones, caras,
+  repartos y recortes.
+- Al cargarlo, la huella se verifica antes de restaurar el proyecto.
+- Los proyectos antiguos de esquema 1 siguen siendo compatibles.

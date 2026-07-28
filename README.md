@@ -551,3 +551,16 @@ de lanzamiento, desde la más nueva hasta la más antigua. El orden se mantiene
 aunque se estén mostrando simultáneamente versiones en español e inglés o
 imágenes de distinta resolución. La fecha `released_at` aparece junto a cada
 versión.
+
+
+### Integridad de los proyectos guardados
+
+Cada cambio manual de versión, reparto o recorte actualiza la revisión del
+proyecto y regenera el archivo descargable. El nombre incluye esa revisión,
+por ejemplo `proxy-maker-project-r12.json`.
+
+Los proyectos nuevos contienen una huella SHA-256 calculada sobre todas las
+versiones seleccionadas, sus caras, metadatos, repartos y ajustes de recorte.
+La huella se comprueba al cargar el JSON para detectar cualquier pérdida o
+alteración. Los archivos creados con el esquema anterior siguen siendo
+compatibles.
