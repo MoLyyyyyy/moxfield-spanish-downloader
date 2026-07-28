@@ -31,7 +31,7 @@ from mtg_downloader.mpcfill import (
     mpc_candidate_label,
     mpc_candidate_mentions_set_code,
 )
-from mtg_downloader.pdf_export import build_a4_pdf
+from mtg_downloader.pdf_export import PdfProgress, build_a4_pdf
 from mtg_downloader.profile_resolution import resolve_with_language_fallback
 from mtg_downloader.review import (
     candidate_key,
@@ -305,7 +305,7 @@ varias ilustraciones durante el paso de revisión.
     analysis_submitted = st.button(
         "Analizar mazo",
         type="primary",
-        use_container_width=True,
+        width="stretch",
     )
 
     analysis_config = {
@@ -381,7 +381,15 @@ def load_cards() -> list[DeckCard]:
 
 
 def clear_generated_output() -> None:
-    for key in ("output_data", "output_name", "output_mime", "report"):
+    for key in (
+        "output_data",
+        "output_name",
+        "output_mime",
+        "report",
+        "pdf_output_data",
+        "pdf_output_name",
+        "pdf_output_signature",
+    ):
         st.session_state.pop(key, None)
 
 
@@ -795,7 +803,7 @@ if app_step == 1 and analysis_ready:
     if st.button(
         return_label,
         key="return_to_saved_analysis",
-        use_container_width=True,
+        width="stretch",
     ):
         st.session_state["app_step"] = 2
         st.rerun()
@@ -826,7 +834,7 @@ def render_bulk_panel(filtered: list[int]) -> None:
         st.caption(
             "Las imágenes de MPCFill se recortan automáticamente. Las demás no necesitan recorte."
         )
-        if st.button("Aplicar acción masiva", type="primary", use_container_width=True):
+        if st.button("Aplicar acción masiva", type="primary", width="stretch"):
             apply_bulk_action(selected_indices, action)
             st.rerun(scope="fragment")
 
@@ -871,7 +879,7 @@ def render_gallery_grouped_section(
                         if st.button(
                             "Cambiar versión",
                             key=f"gallery_edit_{index}",
-                            use_container_width=True,
+                            width="stretch",
                         ):
                             open_card_editor(index)
                             st.rerun(scope="fragment")
@@ -1045,7 +1053,7 @@ def render_crop_editor(index: int, card: ResolvedCard) -> None:
                 st.image(cropped, width=190)
         except MpcFillError as exc:
             st.warning(str(exc))
-        if st.button("Guardar ajuste de recorte", use_container_width=True):
+        if st.button("Guardar ajuste de recorte", width="stretch"):
             update_mpc_crop(index, shift_x=shift_x, shift_y=shift_y)
             st.success("Ajuste guardado. Las imágenes MPCFill seguirán recortándose automáticamente.")
             st.rerun(scope="fragment")
@@ -1103,7 +1111,7 @@ def render_allocations(index: int, card: ResolvedCard) -> None:
                 if len(variants) > 1 and st.button(
                     "Eliminar",
                     key=f"remove_variant_{index}_{variant_index}",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     try:
                         cards = list(st.session_state["resolved_cards"])
@@ -1115,7 +1123,7 @@ def render_allocations(index: int, card: ResolvedCard) -> None:
                         st.rerun(scope="fragment")
                     except AllocationError as exc:
                         st.error(str(exc))
-        if st.button("Guardar reparto", use_container_width=True):
+        if st.button("Guardar reparto", width="stretch"):
             try:
                 cards = list(st.session_state["resolved_cards"])
                 updated = copy.deepcopy(cards[index])
@@ -1142,7 +1150,7 @@ def render_candidate_actions(
             if st.button(
                 "Usar para todas",
                 key=f"all_{key}",
-                use_container_width=True,
+                width="stretch",
             ):
                 save_replacement(index, replacement, advance_indices=review_indices)
                 st.rerun(scope="fragment")
@@ -1150,7 +1158,7 @@ def render_candidate_actions(
             if st.button(
                 "Añadir al reparto",
                 key=f"mix_{key}",
-                use_container_width=True,
+                width="stretch",
             ):
                 save_replacement(index, replacement, add_to_mix=True)
                 st.success("Ilustración añadida al reparto con una copia.")
@@ -1159,7 +1167,7 @@ def render_candidate_actions(
         if st.button(
             "Elegir y continuar",
             key=f"one_{key}",
-            use_container_width=True,
+            width="stretch",
         ):
             save_replacement(index, replacement, advance_indices=review_indices)
             st.rerun(scope="fragment")
@@ -1171,7 +1179,7 @@ def render_review_panel() -> None:
 
     back_col, title_col = st.columns([1, 4])
     with back_col:
-        if st.button("← Volver al mazo", use_container_width=True):
+        if st.button("← Volver al mazo", width="stretch"):
             set_workspace_mode("Vista del mazo")
             st.rerun(scope="fragment")
     with title_col:
@@ -1180,7 +1188,7 @@ def render_review_panel() -> None:
     with st.expander("Ver tabla completa", expanded=False):
         st.dataframe(
             pd.DataFrame([review_row(index, card) for index, card in enumerate(cards)]),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -1217,14 +1225,14 @@ def render_review_panel() -> None:
 
     nav = st.columns([1, 2, 1])
     with nav[0]:
-        if st.button("← Anterior", disabled=position == 0, use_container_width=True):
+        if st.button("← Anterior", disabled=position == 0, width="stretch"):
             set_review_index(previous_index(review_indices, selected_index))
             st.rerun(scope="fragment")
     with nav[1]:
         if st.button(
             "Mantener actual y continuar",
             disabled=position == len(review_indices) - 1,
-            use_container_width=True,
+            width="stretch",
         ):
             set_review_index(next_index(review_indices, selected_index))
             st.rerun(scope="fragment")
@@ -1232,7 +1240,7 @@ def render_review_panel() -> None:
         if st.button(
             "Siguiente →",
             disabled=position == len(review_indices) - 1,
-            use_container_width=True,
+            width="stretch",
         ):
             set_review_index(next_index(review_indices, selected_index))
             st.rerun(scope="fragment")
@@ -1410,7 +1418,7 @@ def render_review_panel() -> None:
                 if st.button(
                     "Mostrar 12 más",
                     key=f"show_more_scryfall_{selected_index}",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     st.session_state[visible_key] = visible_limit + 12
                     st.rerun(scope="fragment")
@@ -1528,7 +1536,7 @@ def render_review_panel() -> None:
                         if st.button(
                             "Mostrar 12 más",
                             key=f"show_more_mpc_{selected_index}",
-                            use_container_width=True,
+                            width="stretch",
                         ):
                             st.session_state[visible_key] = (
                                 visible_limit + 12
@@ -1660,44 +1668,135 @@ def render_export_panel() -> None:
 
     pdf_file_name = commander_pdf_filename(cards)
     pdf_image_quality = st.session_state["analysis_image_quality"]
+    pdf_output_signature = hashlib.sha256(
+        json.dumps(
+            {
+                "analysis_signature": st.session_state.get(
+                    "analysis_signature",
+                    "",
+                ),
+                "file_name": pdf_file_name,
+                "cut_lines": cut_lines,
+                "cut_line_style": cut_line_style,
+                "cut_line_width": cut_line_width,
+                "cut_line_color": cut_line_color,
+                "cut_line_over_cards": cut_line_over_cards,
+                "printer_marks": printer_marks,
+                "include_backs": include_backs,
+                "image_quality": pdf_image_quality,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
 
-    def generate_pdf_download() -> bytes:
-        with ScryfallClient(
-            cache_dir(),
-            image_quality=pdf_image_quality,
-        ) as client:
-            result = build_a4_pdf(
-                cards,
-                client,
-                back_spec=back_spec,
-                include_backs=include_backs,
-                cut_lines=cut_lines,
-                cut_line_style=cut_line_style,
-                cut_line_width=cut_line_width,
-                cut_line_color=cut_line_color,
-                cut_line_over_cards=cut_line_over_cards,
-                printer_marks=printer_marks,
-            )
-        return result.data
+    if (
+        st.session_state.get("pdf_output_signature")
+        != pdf_output_signature
+    ):
+        for key in (
+            "pdf_output_data",
+            "pdf_output_name",
+            "pdf_output_signature",
+        ):
+            st.session_state.pop(key, None)
 
-    st.download_button(
-        "Generar PDF y descargar",
-        data=generate_pdf_download,
-        file_name=pdf_file_name,
-        mime="application/pdf",
-        type="primary",
-        use_container_width=True,
-        disabled=generation_disabled,
-        on_click="ignore",
-        help=(
-            "El PDF se genera al pulsar el botón y la descarga comienza "
-            "automáticamente cuando termina."
-        ),
-    )
-    st.caption(
-        "Un solo clic: genera el PDF, descarga las imágenes necesarias "
-        "y comienza la descarga automáticamente."
-    )
+    if st.session_state.get("pdf_output_data") is None:
+        pdf_requested = st.button(
+            "Generar PDF",
+            type="primary",
+            width="stretch",
+            disabled=generation_disabled,
+        )
+
+        if pdf_requested:
+            progress = st.progress(0.0)
+            status = st.empty()
+            started_at = time.monotonic()
+
+            def update_pdf_progress(event: PdfProgress) -> None:
+                elapsed = int(time.monotonic() - started_at)
+                phase_labels = {
+                    "front": "Preparando frente",
+                    "back": "Preparando reverso",
+                    "common_back": "Preparando reverso común",
+                    "page": "Montando página",
+                    "finalizing": "Finalizando el PDF",
+                    "done": "PDF preparado",
+                }
+                phase_label = phase_labels.get(
+                    event.phase,
+                    "Generando PDF",
+                )
+                detail = (
+                    f"{event.phase_current}/{event.phase_total}"
+                    if event.phase_total
+                    else ""
+                )
+                page_detail = (
+                    f" · página {event.page_label}"
+                    if event.page_label
+                    else ""
+                )
+                card_detail = (
+                    f" · **{event.label}**"
+                    if event.label and event.label != "PDF"
+                    else ""
+                )
+                status.write(
+                    f"{phase_label} {detail}{page_detail}{card_detail} · "
+                    f"{elapsed // 60}:{elapsed % 60:02d}"
+                )
+                progress.progress(
+                    min(event.current / max(event.total, 1), 1.0)
+                )
+
+            try:
+                with ScryfallClient(
+                    cache_dir(),
+                    image_quality=pdf_image_quality,
+                ) as client:
+                    result = build_a4_pdf(
+                        cards,
+                        client,
+                        back_spec=back_spec,
+                        include_backs=include_backs,
+                        cut_lines=cut_lines,
+                        cut_line_style=cut_line_style,
+                        cut_line_width=cut_line_width,
+                        cut_line_color=cut_line_color,
+                        cut_line_over_cards=cut_line_over_cards,
+                        printer_marks=printer_marks,
+                        progress_callback=update_pdf_progress,
+                    )
+
+                progress.progress(1.0)
+                st.session_state["pdf_output_data"] = result.data
+                st.session_state["pdf_output_name"] = pdf_file_name
+                st.session_state[
+                    "pdf_output_signature"
+                ] = pdf_output_signature
+                st.rerun()
+            except (ScryfallError, OSError, ValueError) as exc:
+                status.error(str(exc))
+
+        st.caption(
+            "Primero se genera el PDF y se descargan las imágenes "
+            "necesarias. Al terminar aparecerá el botón de descarga."
+        )
+    else:
+        st.download_button(
+            "Descargar PDF",
+            data=st.session_state["pdf_output_data"],
+            file_name=st.session_state["pdf_output_name"],
+            mime="application/pdf",
+            type="primary",
+            width="stretch",
+            on_click="ignore",
+        )
+        st.caption(
+            f"PDF preparado: `{st.session_state['pdf_output_name']}`"
+        )
 
 
     images_requested = False
@@ -1712,13 +1811,13 @@ def render_export_panel() -> None:
         with other_columns[0]:
             images_requested = st.button(
                 "Generar ZIP de imágenes",
-                use_container_width=True,
+                width="stretch",
                 disabled=generation_disabled,
             )
         with other_columns[1]:
             mpc_requested = st.button(
                 "Generar paquete MPC / dúplex",
-                use_container_width=True,
+                width="stretch",
                 disabled=generation_disabled,
             )
 
@@ -1779,14 +1878,14 @@ def render_export_panel() -> None:
             file_name=st.session_state["output_name"],
             mime=st.session_state["output_mime"],
             type="primary",
-            use_container_width=True,
+            width="stretch",
         )
         report = st.session_state.get("report") or []
         if report:
             with st.expander("Informe final", expanded=False):
                 st.dataframe(
                     pd.DataFrame(report),
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                 )
 
@@ -1797,7 +1896,7 @@ if app_step == 2 and signature_matches:
         if st.button(
             "← Lista y opciones",
             key="step2_back_top",
-            use_container_width=True,
+            width="stretch",
         ):
             st.session_state["app_step"] = 1
             st.rerun()
@@ -1806,7 +1905,7 @@ if app_step == 2 and signature_matches:
             "Continuar a exportación →",
             key="step2_next_top",
             type="primary",
-            use_container_width=True,
+            width="stretch",
         ):
             st.session_state["app_step"] = 3
             st.rerun()
@@ -1821,7 +1920,7 @@ if app_step == 2 and signature_matches:
         if st.button(
             "← Lista y opciones",
             key="step2_back_bottom",
-            use_container_width=True,
+            width="stretch",
         ):
             st.session_state["app_step"] = 1
             st.rerun()
@@ -1830,7 +1929,7 @@ if app_step == 2 and signature_matches:
             "Continuar a exportación →",
             key="step2_next_bottom",
             type="primary",
-            use_container_width=True,
+            width="stretch",
         ):
             st.session_state["app_step"] = 3
             st.rerun()
@@ -1840,7 +1939,7 @@ elif app_step == 3 and signature_matches:
     with navigation[0]:
         if st.button(
             "← Volver a revisar",
-            use_container_width=True,
+            width="stretch",
         ):
             st.session_state["app_step"] = 2
             st.rerun()

@@ -441,14 +441,14 @@ nombres de archivo se limpian automáticamente. Por ejemplo:
 - `Fire // Ice` → `Fire - Ice.pdf`
 
 
-### Generación y descarga directa del PDF
+### Generación y descarga del PDF
 
-El botón principal del paso 3 es **Generar PDF y descargar**. La generación se
-ejecuta de forma diferida al pulsarlo y, cuando termina, el navegador inicia la
-descarga directamente. No se muestra un segundo botón ni se genera el PDF al
-entrar en la pantalla.
+El paso 3 muestra primero el botón **Generar PDF**. Durante la generación se
+muestra el progreso de cartas y páginas. Cuando termina, el botón de generación
+se sustituye por **Descargar PDF**.
 
-Esta función requiere Streamlit 1.54 o posterior.
+Cambiar los ajustes del PDF o modificar una selección invalida el PDF anterior
+y vuelve a mostrar el botón de generación.
 
 
 ### Desambiguación por edición en MPCFill
@@ -471,3 +471,9 @@ la carta antes de aceptar un resultado.
 Los separadores `/` de Moxfield y `//` de Scryfall se consideran equivalentes.
 Además, un código de edición sin número de coleccionista ya permite realizar
 una búsqueda exacta dentro de esa edición.
+
+
+### Compatibilidad con Streamlit
+
+La interfaz utiliza el parámetro `width` de Streamlit. Los antiguos argumentos
+`use_container_width` se han eliminado para evitar avisos de obsolescencia.

@@ -82,14 +82,15 @@ def test_gallery_filters_and_statuses_exist() -> None:
     assert "Múltiples artes" in app
     assert "Baja resolución" in app
     assert "Preparar todas las imágenes ahora" not in app
-    assert "comienza la descarga automáticamente" in app
+    assert "Al terminar aparecerá el botón de descarga" in app
     assert "cache_stats(" in app
 
 
 def test_validation_and_simplified_export_actions_exist() -> None:
     app = app_text()
     assert "Validar y exportar" in app
-    assert "Generar PDF y descargar" in app
+    assert "Generar PDF" in app
+    assert "Descargar PDF" in app
     assert "Otros formatos" in app
     assert "Generar ZIP de imágenes" in app
     assert "Generar paquete MPC / dúplex" in app
@@ -128,13 +129,15 @@ def test_exact_mpcfilltopdf_assets_are_mandatory() -> None:
 
 
 
-def test_pdf_uses_deferred_generation_in_one_click() -> None:
+def test_pdf_uses_generate_then_download_flow() -> None:
     app = app_text()
-    assert "def generate_pdf_download() -> bytes:" in app
-    assert "data=generate_pdf_download" in app
-    assert 'on_click="ignore"' in app
-    assert "update_pdf_progress" not in app
-    assert "progress_callback=update_pdf_progress" not in app
+    assert 'pdf_requested = st.button(' in app
+    assert '"Generar PDF"' in app
+    assert '"Descargar PDF"' in app
+    assert "update_pdf_progress" in app
+    assert "progress_callback=update_pdf_progress" in app
+    assert 'st.session_state["pdf_output_data"] = result.data' in app
+    assert "st.rerun()" in app
 
 
 
@@ -206,7 +209,8 @@ def test_magic_back_is_always_used_without_selector() -> None:
 
 def test_pdf_is_the_primary_export_action() -> None:
     app = app_text()
-    assert '"Generar PDF y descargar"' in app
+    assert '"Generar PDF"' in app
+    assert '"Descargar PDF"' in app
     assert 'type="primary"' in app
     assert 'with st.expander("Otros formatos"' in app
     assert 'export_format = st.selectbox(' not in app
@@ -333,16 +337,23 @@ def test_pdf_uses_first_card_filename() -> None:
 
 
 
-def test_pdf_is_generated_by_deferred_download_button() -> None:
+def test_pdf_generation_replaces_button_with_download() -> None:
     app = app_text()
-    assert "def generate_pdf_download() -> bytes:" in app
-    assert '"Generar PDF y descargar"' in app
-    assert "data=generate_pdf_download" in app
-    assert "file_name=pdf_file_name" in app
-    assert 'pdf_image_quality = st.session_state["analysis_image_quality"]' in app
-    assert "image_quality=pdf_image_quality" in app
+    assert 'if st.session_state.get("pdf_output_data") is None:' in app
+    assert 'pdf_requested = st.button(' in app
+    assert '"Generar PDF"' in app
+    assert 'st.download_button(' in app
+    assert '"Descargar PDF"' in app
+    assert 'data=st.session_state["pdf_output_data"]' in app
+    assert 'file_name=st.session_state["pdf_output_name"]' in app
     assert 'mime="application/pdf"' in app
     assert 'on_click="ignore"' in app
-    assert "pdf_requested" not in app
     assert 'requested_format = "pdf"' not in app
     assert '"Descargar ZIP preparado"' in app
+
+
+
+def test_app_has_no_deprecated_container_width() -> None:
+    app = app_text()
+    assert "use_container_width" not in app
+    assert 'width="stretch"' in app
