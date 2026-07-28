@@ -477,3 +477,28 @@ una búsqueda exacta dentro de esa edición.
 
 La interfaz utiliza el parámetro `width` de Streamlit. Los antiguos argumentos
 `use_container_width` se han eliminado para evitar avisos de obsolescencia.
+
+
+### División automática de PDFs grandes
+
+En **Ajustes del PDF** aparece la casilla **Dividir automáticamente si supera
+200 MB**, activada por defecto. Si el documento supera ese tamaño, se crean
+varias partes y se muestra un botón para descargar cada una.
+
+Las parejas de páginas dúplex (`1/1B`, `2/2B`, etc.) se mantienen juntas. Si una
+pareja supera por sí sola el límite, la app avisa y no separa el frente de su
+reverso.
+
+Cuando existen varias partes, se empaquetan automáticamente en un único ZIP y
+se muestra solamente el botón **Descargar todas las partes**.
+
+
+### Aviso de huecos de impresión
+
+Antes de generar el PDF, Proxy Maker calcula el aprovechamiento de las hojas
+A4 de 9 cartas. Si la última hoja queda incompleta, muestra cuántas posiciones
+se pagarán en blanco y cuántas cartas se pueden añadir para completarla.
+
+Por ejemplo, 100 cartas requieren 12 hojas, equivalentes a 108 posiciones, por
+lo que quedan 8 huecos. Los huecos se colocan únicamente al final de la última
+hoja y no bloquean la generación.

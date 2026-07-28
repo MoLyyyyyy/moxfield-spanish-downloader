@@ -136,7 +136,7 @@ def test_pdf_uses_generate_then_download_flow() -> None:
     assert '"Descargar PDF"' in app
     assert "update_pdf_progress" in app
     assert "progress_callback=update_pdf_progress" in app
-    assert 'st.session_state["pdf_output_data"] = result.data' in app
+    assert 'st.session_state["pdf_output_download"] = {' in app
     assert "st.rerun()" in app
 
 
@@ -339,14 +339,14 @@ def test_pdf_uses_first_card_filename() -> None:
 
 def test_pdf_generation_replaces_button_with_download() -> None:
     app = app_text()
-    assert 'if st.session_state.get("pdf_output_data") is None:' in app
+    assert 'if not st.session_state.get("pdf_output_download"):' in app
     assert 'pdf_requested = st.button(' in app
     assert '"Generar PDF"' in app
     assert 'st.download_button(' in app
     assert '"Descargar PDF"' in app
-    assert 'data=st.session_state["pdf_output_data"]' in app
-    assert 'file_name=st.session_state["pdf_output_name"]' in app
-    assert 'mime="application/pdf"' in app
+    assert 'data=pdf_download["data"]' in app
+    assert 'file_name=pdf_download["file_name"]' in app
+    assert 'mime=pdf_download["mime"]' in app
     assert 'on_click="ignore"' in app
     assert 'requested_format = "pdf"' not in app
     assert '"Descargar ZIP preparado"' in app
@@ -357,3 +357,27 @@ def test_app_has_no_deprecated_container_width() -> None:
     app = app_text()
     assert "use_container_width" not in app
     assert 'width="stretch"' in app
+
+
+
+def test_pdf_can_split_over_200_mb() -> None:
+    app = app_text()
+    assert '"Dividir automáticamente si supera 200 MB"' in app
+    assert "PDF_SPLIT_LIMIT_BYTES" in app
+    assert "split_pdf_if_needed(" in app
+    assert "preserve_page_pairs=include_backs" in app
+    assert "build_pdf_parts_zip(pdf_parts)" in app
+    assert '"Descargar todas las partes"' in app
+    assert '"pdf_output_download"' in app
+    assert '"Descargar parte {index} de {len(pdf_parts)}"' not in app
+
+
+
+def test_export_warns_about_paid_empty_slots() -> None:
+    app = app_text()
+    assert "calculate_sheet_usage(validation.expected_cards)" in app
+    assert "posiciones pagadas" in app
+    assert "Puedes añadir" in app
+    assert "para completar la última hoja" in app
+    assert "sin huecos pagados" in app
+    assert "únicamente al final de la última hoja" in app

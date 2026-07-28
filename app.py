@@ -32,6 +32,14 @@ from mtg_downloader.mpcfill import (
     mpc_candidate_mentions_set_code,
 )
 from mtg_downloader.pdf_export import PdfProgress, build_a4_pdf
+from mtg_downloader.pdf_split import (
+    PDF_SPLIT_LIMIT_BYTES,
+    PdfPart,
+    build_pdf_parts_zip,
+    format_file_size,
+    split_pdf_if_needed,
+)
+from mtg_downloader.print_layout import calculate_sheet_usage
 from mtg_downloader.profile_resolution import resolve_with_language_fallback
 from mtg_downloader.review import (
     candidate_key,
@@ -386,8 +394,7 @@ def clear_generated_output() -> None:
         "output_name",
         "output_mime",
         "report",
-        "pdf_output_data",
-        "pdf_output_name",
+        "pdf_output_download",
         "pdf_output_signature",
     ):
         st.session_state.pop(key, None)
@@ -1597,6 +1604,29 @@ def render_export_panel() -> None:
     for warning in validation.warnings:
         st.warning(warning)
 
+    sheet_usage = calculate_sheet_usage(validation.expected_cards)
+    if sheet_usage.is_full:
+        st.success(
+            f"Aprovechamiento completo: {sheet_usage.card_count} cartas "
+            f"ocupan {sheet_usage.sheet_count} hojas de "
+            f"{sheet_usage.slots_per_sheet}, sin huecos pagados."
+        )
+    else:
+        st.warning(
+            f"La última hoja tendrá {sheet_usage.empty_slots} "
+            f"{'hueco' if sheet_usage.empty_slots == 1 else 'huecos'} "
+            f"en blanco: {sheet_usage.card_count} cartas ocupan "
+            f"{sheet_usage.sheet_count} hojas "
+            f"({sheet_usage.total_slots} posiciones pagadas). "
+            f"Puedes añadir {sheet_usage.cards_to_complete} "
+            f"{'carta' if sheet_usage.cards_to_complete == 1 else 'cartas'} "
+            "para completar la última hoja."
+        )
+        st.caption(
+            "Los huecos se colocan únicamente al final de la última hoja; "
+            "nunca se intercalan entre las cartas."
+        )
+
     with st.expander("Detalles de validación", expanded=False):
         if validation.missing_entries:
             st.write("**Sin imagen:** " + ", ".join(validation.missing_entries))
@@ -1665,6 +1695,14 @@ def render_export_panel() -> None:
                 "de imprenta de MPCFillToPDF."
             ),
         )
+        split_large_pdf = st.checkbox(
+            "Dividir automáticamente si supera 200 MB",
+            value=True,
+            help=(
+                "Crea varios PDFs manteniendo juntas las parejas de "
+                "páginas 1/1B, 2/2B, etc."
+            ),
+        )
 
     pdf_file_name = commander_pdf_filename(cards)
     pdf_image_quality = st.session_state["analysis_image_quality"]
@@ -1684,6 +1722,8 @@ def render_export_panel() -> None:
                 "printer_marks": printer_marks,
                 "include_backs": include_backs,
                 "image_quality": pdf_image_quality,
+                "split_large_pdf": split_large_pdf,
+                "split_limit_bytes": PDF_SPLIT_LIMIT_BYTES,
             },
             ensure_ascii=False,
             sort_keys=True,
@@ -1695,13 +1735,12 @@ def render_export_panel() -> None:
         != pdf_output_signature
     ):
         for key in (
-            "pdf_output_data",
-            "pdf_output_name",
+            "pdf_output_download",
             "pdf_output_signature",
         ):
             st.session_state.pop(key, None)
 
-    if st.session_state.get("pdf_output_data") is None:
+    if not st.session_state.get("pdf_output_download"):
         pdf_requested = st.button(
             "Generar PDF",
             type="primary",
@@ -1770,9 +1809,51 @@ def render_export_panel() -> None:
                         progress_callback=update_pdf_progress,
                     )
 
+                if split_large_pdf:
+                    pdf_parts = split_pdf_if_needed(
+                        result.data,
+                        pdf_file_name,
+                        max_bytes=PDF_SPLIT_LIMIT_BYTES,
+                        preserve_page_pairs=include_backs,
+                    )
+                else:
+                    pdf_parts = [
+                        PdfPart(
+                            data=result.data,
+                            file_name=pdf_file_name,
+                        )
+                    ]
+
+                if len(pdf_parts) == 1:
+                    download_data = pdf_parts[0].data
+                    download_name = pdf_parts[0].file_name
+                    download_mime = "application/pdf"
+                    download_label = "Descargar PDF"
+                else:
+                    download_data = build_pdf_parts_zip(pdf_parts)
+                    download_name = (
+                        f"{Path(pdf_file_name).stem} - partes.zip"
+                    )
+                    download_mime = "application/zip"
+                    download_label = "Descargar todas las partes"
+
                 progress.progress(1.0)
-                st.session_state["pdf_output_data"] = result.data
-                st.session_state["pdf_output_name"] = pdf_file_name
+                st.session_state["pdf_output_download"] = {
+                    "data": download_data,
+                    "file_name": download_name,
+                    "mime": download_mime,
+                    "label": download_label,
+                    "part_count": len(pdf_parts),
+                    "part_names": [
+                        part.file_name for part in pdf_parts
+                    ],
+                    "part_sizes": [
+                        len(part.data) for part in pdf_parts
+                    ],
+                    "exceeds_limit": any(
+                        part.exceeds_limit for part in pdf_parts
+                    ),
+                }
                 st.session_state[
                     "pdf_output_signature"
                 ] = pdf_output_signature
@@ -1785,18 +1866,43 @@ def render_export_panel() -> None:
             "necesarias. Al terminar aparecerá el botón de descarga."
         )
     else:
+        pdf_download = st.session_state["pdf_output_download"]
         st.download_button(
-            "Descargar PDF",
-            data=st.session_state["pdf_output_data"],
-            file_name=st.session_state["pdf_output_name"],
-            mime="application/pdf",
+            pdf_download["label"],
+            data=pdf_download["data"],
+            file_name=pdf_download["file_name"],
+            mime=pdf_download["mime"],
             type="primary",
             width="stretch",
             on_click="ignore",
         )
-        st.caption(
-            f"PDF preparado: `{st.session_state['pdf_output_name']}`"
-        )
+
+        if pdf_download["part_count"] == 1:
+            st.caption(
+                f"PDF preparado: `{pdf_download['file_name']}` · "
+                f"{format_file_size(len(pdf_download['data']))}"
+            )
+        else:
+            st.success(
+                f"El PDF superaba 200 MB y se ha dividido en "
+                f"{pdf_download['part_count']} partes. Todas están "
+                "incluidas en un único archivo ZIP."
+            )
+            with st.expander("Ver partes incluidas", expanded=False):
+                for name, size in zip(
+                    pdf_download["part_names"],
+                    pdf_download["part_sizes"],
+                ):
+                    st.caption(
+                        f"`{name}` · {format_file_size(size)}"
+                    )
+
+        if pdf_download["exceeds_limit"]:
+            st.warning(
+                "Una pareja de páginas supera por sí sola los 200 MB. "
+                "Se ha mantenido unida para no separar el frente de su "
+                "reverso."
+            )
 
 
     images_requested = False
