@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import random
@@ -532,14 +533,37 @@ class ScryfallClient:
         return path.exists() and path.stat().st_size > 0
 
     def download_raw_image(self, face: ImageFace) -> bytes:
-        key = hashlib.sha256(face.url.encode("utf-8")).hexdigest()
+        url = face.url
+        if url.startswith("data:"):
+            try:
+                _header, encoded = url.split(",", 1)
+                return base64.b64decode(encoded)
+            except (ValueError, base64.binascii.Error) as exc:
+                raise ScryfallError(
+                    f"No se ha podido interpretar la imagen de {face.label}."
+                ) from exc
+
+        local_path = None
+        if url.startswith("file://"):
+            local_path = Path(url[7:])
+        elif "://" not in url:
+            local_path = Path(url)
+        if local_path is not None:
+            try:
+                return local_path.read_bytes()
+            except OSError as exc:
+                raise ScryfallError(
+                    f"No se ha podido leer la imagen local de {face.label}."
+                ) from exc
+
+        key = hashlib.sha256(url.encode("utf-8")).hexdigest()
         path = self.raw_image_cache / f"{key}{face.extension}"
         if path.exists() and path.stat().st_size > 0:
             return path.read_bytes()
 
         try:
             response = self.client.get(
-                face.url,
+                url,
                 headers={
                     "User-Agent": "ProxyMaker/0.4 (aplicacion personal)",
                     "Accept": "image/avif,image/webp,image/png,image/jpeg,*/*",

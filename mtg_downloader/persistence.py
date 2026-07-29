@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
+from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any
 
 from .models import CardVariant, DeckCard, ImageFace, ResolvedCard
@@ -98,16 +101,57 @@ def import_selection_config(
     return restored, warnings
 
 
+
+
+def _canonical_upload_url(url: str, extension: str) -> str:
+    if url.startswith("upload://"):
+        return url
+
+    path_text = url[7:] if url.startswith("file://") else url
+    path = Path(path_text)
+    try:
+        data = path.read_bytes()
+    except OSError:
+        safe_extension = extension if extension.startswith(".") else f".{extension}"
+        return f"upload://unknown{safe_extension}"
+
+    digest = hashlib.sha256(data).hexdigest()
+    safe_extension = extension if extension.startswith(".") else f".{extension}"
+    return f"upload://{digest}{safe_extension}"
+
+
+def _is_supported_local_face_url(url: str, provider: str) -> bool:
+    if url.startswith(("https://", "http://", "data:")):
+        return True
+    if provider == "upload":
+        return (
+            url.startswith("upload://")
+            or url.startswith("file://")
+            or "://" not in url
+        )
+    return False
+
+
 def _face_to_dict(face: ImageFace) -> dict[str, Any]:
-    return {
+    url = face.url
+    embedded_asset_id = None
+    if face.provider == "upload":
+        url = _canonical_upload_url(face.url, face.extension)
+        parsed = urlparse(url)
+        embedded_asset_id = parsed.netloc + parsed.path
+
+    payload = {
         "label": face.label,
-        "url": face.url,
+        "url": url,
         "extension": face.extension,
         "provider": face.provider,
         "crop_mode": face.crop_mode,
         "crop_shift_x": face.crop_shift_x,
         "crop_shift_y": face.crop_shift_y,
     }
+    if embedded_asset_id:
+        payload["embedded_asset_id"] = embedded_asset_id
+    return payload
 
 
 def _face_from_dict(data: dict[str, Any]) -> ImageFace:
@@ -116,13 +160,14 @@ def _face_from_dict(data: dict[str, Any]) -> ImageFace:
         extension = str(data["extension"])
     except KeyError as exc:
         raise SelectionConfigError("Falta información de imagen.") from exc
-    if not url.startswith(("https://", "http://")):
+    provider = str(data.get("provider") or "scryfall")
+    if not _is_supported_local_face_url(url, provider):
         raise SelectionConfigError("La URL de imagen guardada no es válida.")
     return ImageFace(
         label=str(data.get("label") or "Carta"),
         url=url,
         extension=extension,
-        provider=str(data.get("provider") or "scryfall"),
+        provider=provider,
         crop_mode=(
             str(data["crop_mode"])
             if data.get("crop_mode") is not None

@@ -97,7 +97,7 @@ def group_deck(
 
 
 def gallery_printing_label(card: ResolvedCard) -> str:
-    provider = "MPCFill" if card.provider == "mpcfill" else "Scryfall"
+    provider = {"mpcfill": "MPCFill", "upload": "Archivo propio"}.get(card.provider, "Scryfall")
     set_code = (card.selected_set or "?").upper()
     collector = card.collector_number or "?"
     language = (card.language or "?").upper()
@@ -112,9 +112,11 @@ def gallery_status_label(card: ResolvedCard) -> str:
         return f"🎨 {len(card.allocations)} ilustraciones"
     if card.provider == "mpcfill":
         return "🟣 MPCFill"
+    if card.provider == "upload":
+        return "🟤 Archivo propio"
     if card.image_status == "lowres" or card.highres_image is False:
         return "🟡 Baja resolución"
-    if card.status == "Selección manual":
+    if "manual" in (card.status or "").casefold():
         return "🔵 Selección manual"
     return "🟢 Automática"
 
@@ -136,13 +138,15 @@ def filtered_indices(
             continue
         if provider == "MPCFill" and card.provider != "mpcfill":
             continue
+        if provider == "Archivo propio" and card.provider != "upload":
+            continue
         if language != "Todos" and (card.language or "").casefold() != language.casefold():
             continue
         if state == "Pendientes" and not is_problematic(card):
             continue
         if state == "Manuales" and not (
-            card.status == "Selección manual"
-            or card.provider == "mpcfill"
+            "manual" in (card.status or "").casefold()
+            or card.provider in {"mpcfill", "upload"}
             or card.allocations
         ):
             continue

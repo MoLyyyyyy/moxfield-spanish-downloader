@@ -1,5 +1,5 @@
 Proxy Maker
-Build: 2026.07.28-workflow-v5.2-project-state-fix
+Build: 2026.07.29-workflow-v5.4-embedded-uploads
 Fecha: 2026-07-28
 
 Incluye todas las correcciones anteriores y estas mejoras de flujo:
@@ -38,3 +38,16 @@ Corrección de proyectos v5.2:
   repartos y recortes.
 - Al cargarlo, la huella se verifica antes de restaurar el proyecto.
 - Los proyectos antiguos de esquema 1 siguen siendo compatibles.
+
+
+Mejoras v5.3:
+- Paso 1 sin selector numérico de mazos.
+- Barra de mazos con botón ➕ para añadir y 🗑️ para eliminar.
+- Revisión manual con tercera fuente: Archivo propio.
+- Las imágenes subidas se guardan en caché local y pueden usarse en PDF y ZIP.
+
+
+Mejoras v5.4:
+- Las imágenes subidas manualmente se incrustan dentro del JSON del proyecto.
+- Al cargar un proyecto se restauran automáticamente en la caché local.
+- Las rutas locales ya no afectan a la integridad del proyecto.

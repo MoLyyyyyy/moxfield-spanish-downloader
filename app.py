@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import mimetypes
 import tempfile
 import time
 from pathlib import Path
@@ -103,7 +104,7 @@ st.set_page_config(
 st.title("🃏 Proxy Maker")
 
 ANALYSIS_ENGINE_VERSION = "workflow-v5"
-BUILD_VERSION = "2026.07.28-workflow-v5.2-project-state-fix"
+BUILD_VERSION = "2026.07.29-workflow-v5.4-embedded-uploads"
 SCRYFALL_ALTERNATIVE_ORDER_VERSION = "configurable-v2"
 
 
@@ -138,12 +139,19 @@ def restore_project_state(uploaded_data: bytes) -> None:
         if key in PROJECT_PDF_SETTING_KEYS:
             st.session_state[key] = value
     summary = project.selection_summary
+    upload_suffix = ""
+    if getattr(project, "embedded_upload_count", 0):
+        upload_suffix = (
+            f" También se restauraron {project.embedded_upload_count} "
+            "imagen(es) subida(s) manualmente."
+        )
     st.session_state["flash_message"] = (
         "Proyecto cargado y verificado: "
         f"{summary['entries']} entradas, "
         f"{summary['manual_entries']} selecciones manuales, "
         f"{summary['mixed_entries']} repartos y "
         f"{summary['crop_adjustments']} ajustes de recorte restaurados."
+        f"{upload_suffix}"
     )
 
 
@@ -297,8 +305,8 @@ if app_step == 1:
     with st.expander("Cómo funciona el modo multimazo", expanded=False):
         st.markdown(
             """
-1. Elige el **Número de mazos**.
-2. Abre la pestaña de cada mazo.
+1. Crea cada mazo con el botón **➕**.
+2. Cambia entre mazos desde la barra superior.
 3. Pega su lista y configura su fuente, idioma y calidad.
 4. Pulsa **Analizar mazos**.
 5. Revisa y corrige un mazo cada vez.
@@ -310,45 +318,104 @@ para que el siguiente mazo rellene los huecos del anterior.
         )
 
     saved_deck_configs = deck_configs_from_analysis_config(saved_config)
-    deck_count = int(
-        st.number_input(
-            "Número de mazos",
-            min_value=1,
-            max_value=12,
-            value=max(1, len(saved_deck_configs)),
-            step=1,
-            help=(
-                "Cada mazo tendrá su propia lista y sus propios ajustes. "
-                "El orden de las pestañas será el orden del PDF final."
-            ),
+    saved_deck_signature = hashlib.sha256(
+        json.dumps(
+            saved_deck_configs,
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    if (
+        "deck_config_drafts" not in st.session_state
+        or st.session_state.get("deck_config_drafts_seed")
+        != saved_deck_signature
+    ):
+        st.session_state["deck_config_drafts"] = [
+            normalise_deck_config(item)
+            for item in (saved_deck_configs or [normalise_deck_config(None)])
+        ]
+        st.session_state["deck_config_drafts_seed"] = saved_deck_signature
+        st.session_state["deck_config_active"] = min(
+            int(st.session_state.get("deck_config_active", 0)),
+            len(st.session_state["deck_config_drafts"]) - 1,
         )
-    )
+
+    deck_configs = [
+        normalise_deck_config(item)
+        for item in st.session_state.get("deck_config_drafts")
+        or [normalise_deck_config(None)]
+    ]
+
     st.caption(
         "Los ajustes y las correcciones no se mezclan entre mazos. "
         "Durante la exportación, el siguiente mazo rellena los huecos libres "
         "del anterior."
     )
 
-    tabs = st.tabs(
-        [
-            (
-                f"Mazo {position + 1}"
-                if position >= len(saved_deck_configs)
-                else (
-                    f"Mazo {position + 1} · "
-                    f"{(saved_deck_configs[position].get('deck_name') or saved_deck_configs[position]['decklist'].splitlines()[0])[:28]}"
-                    if (
-                        saved_deck_configs[position].get("deck_name")
-                        or saved_deck_configs[position]["decklist"].strip()
-                    )
-                    else f"Mazo {position + 1}"
-                )
+    def deck_editor_label(position: int, config: dict[str, Any]) -> str:
+        label_source = (
+            config.get("deck_name")
+            or next(
+                (
+                    line.strip()
+                    for line in config.get("decklist", "").splitlines()
+                    if line.strip()
+                ),
+                "",
             )
-            for position in range(deck_count)
-        ]
-    )
+        )
+        if label_source:
+            return f"Mazo {position + 1} · {label_source[:24]}"
+        return f"Mazo {position + 1}"
 
-    deck_configs: list[dict[str, Any]] = []
+    selector_columns = st.columns([6, 1, 1])
+    with selector_columns[0]:
+        active_deck = st.radio(
+            "Mazos",
+            options=list(range(len(deck_configs))),
+            index=min(
+                int(st.session_state.get("deck_config_active", 0)),
+                len(deck_configs) - 1,
+            ),
+            format_func=lambda item: deck_editor_label(
+                item,
+                deck_configs[item],
+            ),
+            horizontal=True,
+            label_visibility="collapsed",
+            key="deck_config_active",
+        )
+    with selector_columns[1]:
+        if st.button(
+            "➕",
+            help="Añadir mazo",
+            width="stretch",
+            disabled=len(deck_configs) >= 12,
+        ):
+            deck_configs.append(normalise_deck_config(None))
+            st.session_state["deck_config_drafts"] = deck_configs
+            st.session_state["deck_config_active"] = len(deck_configs) - 1
+            st.rerun()
+    with selector_columns[2]:
+        if st.button(
+            "🗑️",
+            help="Eliminar mazo actual",
+            width="stretch",
+            disabled=len(deck_configs) <= 1,
+        ):
+            remove_index = min(max(active_deck, 0), len(deck_configs) - 1)
+            deck_configs.pop(remove_index)
+            st.session_state["deck_config_drafts"] = deck_configs
+            st.session_state["deck_config_active"] = min(
+                remove_index,
+                len(deck_configs) - 1,
+            )
+            st.rerun()
+
+    st.caption(
+        f"Editando el mazo {active_deck + 1} de {len(deck_configs)}. "
+        "El orden de esta barra será también el orden del PDF final."
+    )
     source_labels = {
         "Scryfall · imágenes oficiales": "scryfall",
         "MPCFill · diseños de la comunidad": "mpcfill",
@@ -368,159 +435,153 @@ para que el siguiente mazo rellene los huecos del anterior.
         "Usar solo alta resolución": "highres_only",
     }
 
-    for deck_position, tab in enumerate(tabs):
-        base = (
-            saved_deck_configs[deck_position]
-            if deck_position < len(saved_deck_configs)
-            else normalise_deck_config(None)
+    deck_position = active_deck
+    base = deck_configs[deck_position]
+    st.markdown(f"### Configuración del mazo {deck_position + 1}")
+    list_column, settings_column = st.columns([3, 2])
+
+    with list_column:
+        decklist = st.text_area(
+            "Lista",
+            value=base["decklist"],
+            height=390,
+            placeholder=(
+                "Commander:\n"
+                "1 Beorn the Fierce (HOB) 119 *F*\n\n"
+                "Deck:\n"
+                "1 Arcane Signet (TMC) 57\n"
+                "27 Forest (M20) 279"
+            ),
+            help=(
+                "Se respetan cantidad, edición y número de "
+                "coleccionista."
+            ),
+            key=f"decklist_input_{deck_position}",
         )
-        with tab:
-            st.markdown(f"### Configuración del mazo {deck_position + 1}")
-            list_column, settings_column = st.columns([3, 2])
 
-            with list_column:
-                decklist = st.text_area(
-                    "Lista",
-                    value=base["decklist"],
-                    height=390,
-                    placeholder=(
-                        "Commander:\n"
-                        "1 Beorn the Fierce (HOB) 119 *F*\n\n"
-                        "Deck:\n"
-                        "1 Arcane Signet (TMC) 57\n"
-                        "27 Forest (M20) 279"
-                    ),
-                    help=(
-                        "Se respetan cantidad, edición y número de "
-                        "coleccionista."
-                    ),
-                    key=f"decklist_input_{deck_position}",
-                )
+    with settings_column:
+        deck_name = st.text_input(
+            "Nombre del mazo (opcional)",
+            value=base.get("deck_name", ""),
+            placeholder="Se usará el comandante detectado",
+            key=f"deck_name_{deck_position}",
+            help=(
+                "Útil para Partner, Background, Doctor's companion "
+                "o listas sin una sección Commander clara."
+            ),
+        )
 
-            with settings_column:
-                deck_name = st.text_input(
-                    "Nombre del mazo (opcional)",
-                    value=base.get("deck_name", ""),
-                    placeholder="Se usará el comandante detectado",
-                    key=f"deck_name_{deck_position}",
-                    help=(
-                        "Útil para Partner, Background, Doctor's companion "
-                        "o listas sin una sección Commander clara."
-                    ),
-                )
+        source_value = base["preferred_image_source"]
+        source_label = st.selectbox(
+            "Fuente principal",
+            options=list(source_labels),
+            index=list(source_labels.values()).index(source_value),
+            key=f"deck_source_{deck_position}",
+            help=(
+                "Esta elección solo se aplica a este mazo. "
+                "Las cartas podrán corregirse manualmente con "
+                "Scryfall, MPCFill o una imagen subida por ti durante la revisión. "
+                "MPCFill prioriza a MrTeferi, PsilosX, Chilli_Axe, CompC "
+                "y Hathwellcrisping."
+            ),
+        )
+        preferred_image_source = source_labels[source_label]
 
-                source_value = base["preferred_image_source"]
-                source_label = st.selectbox(
-                    "Fuente principal",
-                    options=list(source_labels),
-                    index=list(source_labels.values()).index(source_value),
-                    key=f"deck_source_{deck_position}",
-                    help=(
-                        "Esta elección solo se aplica a este mazo. "
-                        "Las cartas podrán corregirse manualmente con "
-                        "Scryfall o MPCFill durante la revisión. MPCFill "
-                        "prioriza a MrTeferi, PsilosX, Chilli_Axe, CompC "
-                        "y Hathwellcrisping."
-                    ),
-                )
-                preferred_image_source = source_labels[source_label]
+        language_value = base["preferred_language"]
+        language_label = st.selectbox(
+            "Idioma principal",
+            options=list(language_labels),
+            index=list(language_labels.values()).index(language_value),
+            key=f"deck_language_{deck_position}",
+        )
+        preferred_language = language_labels[language_label]
 
-                language_value = base["preferred_language"]
-                language_label = st.selectbox(
-                    "Idioma principal",
-                    options=list(language_labels),
-                    index=list(language_labels.values()).index(language_value),
-                    key=f"deck_language_{deck_position}",
-                )
-                preferred_language = language_labels[language_label]
+        resolution_value = base["resolution_mode"]
+        resolution_label = st.selectbox(
+            "Edición",
+            options=list(resolution_labels),
+            index=list(resolution_labels.values()).index(
+                resolution_value
+            ),
+            key=f"deck_resolution_{deck_position}",
+        )
+        resolution_mode = resolution_labels[resolution_label]
 
-                resolution_value = base["resolution_mode"]
-                resolution_label = st.selectbox(
-                    "Edición",
-                    options=list(resolution_labels),
-                    index=list(resolution_labels.values()).index(
-                        resolution_value
-                    ),
-                    key=f"deck_resolution_{deck_position}",
-                )
-                resolution_mode = resolution_labels[resolution_label]
+        quality_value = base["quality_mode"]
+        quality_label = st.selectbox(
+            "Calidad",
+            options=list(quality_labels),
+            index=list(quality_labels.values()).index(quality_value),
+            key=f"deck_quality_{deck_position}",
+        )
+        quality_mode = quality_labels[quality_label]
 
-                quality_value = base["quality_mode"]
-                quality_label = st.selectbox(
-                    "Calidad",
-                    options=list(quality_labels),
-                    index=list(quality_labels.values()).index(quality_value),
-                    key=f"deck_quality_{deck_position}",
-                )
-                quality_mode = quality_labels[quality_label]
-
-                with st.expander(
-                    f"Opciones avanzadas del mazo {deck_position + 1}",
-                    expanded=False,
-                ):
-                    fallback_language = (
-                        "inglés"
-                        if preferred_language == "es"
-                        else "español"
-                    )
-                    allow_language_fallback = st.checkbox(
-                        f"Usar {fallback_language} como respaldo",
-                        value=base["allow_language_fallback"],
-                        key=f"deck_fallback_{deck_position}",
-                    )
-
-                    image_quality_label = st.selectbox(
-                        "Formato de imagen",
-                        [
-                            "PNG · máxima calidad",
-                            "JPG grande · menos espacio",
-                        ],
-                        index=(
-                            0
-                            if base["image_quality"] == "png"
-                            else 1
-                        ),
-                        key=f"deck_image_quality_{deck_position}",
-                    )
-                    image_quality = (
-                        "png"
-                        if image_quality_label.startswith("PNG")
-                        else "large"
-                    )
-
-                    include_sideboard = st.checkbox(
-                        "Incluir sideboard",
-                        value=base["include_sideboard"],
-                        key=f"deck_sideboard_{deck_position}",
-                    )
-                    include_maybeboard = st.checkbox(
-                        "Incluir maybeboard",
-                        value=base["include_maybeboard"],
-                        key=f"deck_maybeboard_{deck_position}",
-                    )
-
-                st.info(
-                    "Este mazo se analizará con: "
-                    f"{'MPCFill' if preferred_image_source == 'mpcfill' else 'Scryfall'} "
-                    f"· {'español' if preferred_language == 'es' else 'inglés'}."
-                )
-
-            deck_configs.append(
-                normalise_deck_config(
-                    {
-                        "decklist": decklist,
-                        "deck_name": deck_name,
-                        "preferred_image_source": preferred_image_source,
-                        "preferred_language": preferred_language,
-                        "allow_language_fallback": allow_language_fallback,
-                        "resolution_mode": resolution_mode,
-                        "quality_mode": quality_mode,
-                        "image_quality": image_quality,
-                        "include_sideboard": include_sideboard,
-                        "include_maybeboard": include_maybeboard,
-                    }
-                )
+        with st.expander(
+            f"Opciones avanzadas del mazo {deck_position + 1}",
+            expanded=False,
+        ):
+            fallback_language = (
+                "inglés"
+                if preferred_language == "es"
+                else "español"
             )
+            allow_language_fallback = st.checkbox(
+                f"Usar {fallback_language} como respaldo",
+                value=base["allow_language_fallback"],
+                key=f"deck_fallback_{deck_position}",
+            )
+
+            image_quality_label = st.selectbox(
+                "Formato de imagen",
+                [
+                    "PNG · máxima calidad",
+                    "JPG grande · menos espacio",
+                ],
+                index=(
+                    0
+                    if base["image_quality"] == "png"
+                    else 1
+                ),
+                key=f"deck_image_quality_{deck_position}",
+            )
+            image_quality = (
+                "png"
+                if image_quality_label.startswith("PNG")
+                else "large"
+            )
+
+            include_sideboard = st.checkbox(
+                "Incluir sideboard",
+                value=base["include_sideboard"],
+                key=f"deck_sideboard_{deck_position}",
+            )
+            include_maybeboard = st.checkbox(
+                "Incluir maybeboard",
+                value=base["include_maybeboard"],
+                key=f"deck_maybeboard_{deck_position}",
+            )
+
+        st.info(
+            "Este mazo se analizará con: "
+            f"{'MPCFill' if preferred_image_source == 'mpcfill' else 'Scryfall'} "
+            f"· {'español' if preferred_language == 'es' else 'inglés'}."
+        )
+
+    deck_configs[deck_position] = normalise_deck_config(
+        {
+            "decklist": decklist,
+            "deck_name": deck_name,
+            "preferred_image_source": preferred_image_source,
+            "preferred_language": preferred_language,
+            "allow_language_fallback": allow_language_fallback,
+            "resolution_mode": resolution_mode,
+            "quality_mode": quality_mode,
+            "image_quality": image_quality,
+            "include_sideboard": include_sideboard,
+            "include_maybeboard": include_maybeboard,
+        }
+    )
+    st.session_state["deck_config_drafts"] = deck_configs
 
     analysis_submitted = st.button(
         "Analizar mazo" if deck_count == 1 else "Analizar mazos",
@@ -712,6 +773,79 @@ def cache_dir() -> Path:
 
 def mpc_cache_dir() -> Path:
     return Path(tempfile.gettempdir()) / "moxfield_cartas_es_mpcfill_cache"
+
+
+def uploads_cache_dir() -> Path:
+    path = cache_dir() / "user_uploads"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def uploaded_file_extension(uploaded_file: Any) -> str:
+    suffix = Path(getattr(uploaded_file, "name", "")).suffix.lower()
+    if suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+        return ".jpg" if suffix == ".jpeg" else suffix
+    guessed = mimetypes.guess_extension(getattr(uploaded_file, "type", "") or "")
+    if guessed in {".png", ".jpg", ".jpeg", ".webp"}:
+        return ".jpg" if guessed == ".jpeg" else guessed
+    return ".png"
+
+
+def persist_uploaded_card_image(uploaded_file: Any) -> str:
+    data = uploaded_file.getvalue()
+    digest = hashlib.sha256(data).hexdigest()
+    path = uploads_cache_dir() / f"{digest}{uploaded_file_extension(uploaded_file)}"
+    if not path.exists():
+        path.write_bytes(data)
+    return str(path)
+
+
+def expected_face_count(card: ResolvedCard) -> int:
+    if card.faces:
+        return max(1, len(card.faces))
+    source_name = card.source.name
+    return 2 if (" // " in source_name or " / " in source_name) else 1
+
+
+def build_uploaded_replacement(
+    current: ResolvedCard,
+    face_paths: list[str],
+    *,
+    language: str | None,
+) -> ResolvedCard:
+    faces = [
+        ImageFace(
+            label=(
+                current.faces[position].label
+                if position < len(current.faces)
+                else f"Cara {position + 1}"
+            ),
+            url=path,
+            extension=Path(path).suffix.lower() or ".png",
+            provider="upload",
+        )
+        for position, path in enumerate(face_paths)
+    ]
+    selected_set = current.selected_set or current.source.set_code or "UPL"
+    collector_number = current.collector_number or current.source.collector_number or "1"
+    return ResolvedCard(
+        source=current.source,
+        status="Imagen subida manualmente",
+        provider="upload",
+        type_line=current.type_line,
+        language=language,
+        printed_name=current.printed_name or current.source.name,
+        selected_set=selected_set,
+        collector_number=collector_number,
+        faces=faces,
+        scryfall_data={
+            "uploaded": True,
+            "face_count": len(faces),
+        },
+        downloaded_format=(Path(face_paths[0]).suffix.lower().lstrip(".") if face_paths else "png"),
+        image_status="manual_upload",
+        highres_image=True,
+    )
 
 
 def previous_index(indices: list[int], current: int) -> int:
@@ -1579,7 +1713,7 @@ def render_deck_gallery() -> None:
     with filter_cols[1]:
         provider = st.selectbox(
             "Fuente",
-            ["Todos", "Scryfall", "MPCFill"],
+            ["Todos", "Scryfall", "MPCFill", "Archivo propio"],
             key=f"gallery_provider_{deck_position}",
         )
     with filter_cols[2]:
@@ -2020,13 +2154,18 @@ def render_review_panel() -> None:
         source_options = [
             "Oficiales · Scryfall",
             "Comunidad · MPCFill",
+            "Archivo propio",
         ]
         source_state_key = f"version_source_{selected_index}"
         if source_state_key not in st.session_state:
             st.session_state[source_state_key] = (
-                "Comunidad · MPCFill"
-                if preferred_image_source == "mpcfill"
-                else "Oficiales · Scryfall"
+                "Archivo propio"
+                if selected.provider == "upload"
+                else (
+                    "Comunidad · MPCFill"
+                    if preferred_image_source == "mpcfill"
+                    else "Oficiales · Scryfall"
+                )
             )
         source = st.radio(
             "Fuente",
@@ -2254,7 +2393,7 @@ def render_review_panel() -> None:
                     )
                     st.rerun()
 
-        else:
+        elif source == "Comunidad · MPCFill":
             inherited_dpi = {
                 "allow_lowres": 300,
                 "prefer_highres": 600,
@@ -2380,6 +2519,64 @@ def render_review_panel() -> None:
                             st.rerun()
             except MpcFillError as exc:
                 st.warning(f"MPCFill no está disponible: {exc}")
+
+        else:
+            upload_face_total = expected_face_count(selected)
+            upload_language_label = st.selectbox(
+                "Idioma de la imagen subida",
+                ["Mantener el actual", "Español", "Inglés"],
+                key=f"upload_language_{selected_index}",
+            )
+            upload_language = {
+                "Mantener el actual": selected.language,
+                "Español": "es",
+                "Inglés": "en",
+            }[upload_language_label]
+            st.caption(
+                "Sube tu propia imagen para sustituir esta carta. "
+                "Si la carta tiene varias caras físicas, debes subirlas todas."
+            )
+            uploaded_paths: list[str] = []
+            preview_columns = st.columns(min(upload_face_total, 2))
+            for face_position in range(upload_face_total):
+                with preview_columns[face_position % len(preview_columns)]:
+                    uploaded_face = st.file_uploader(
+                        f"Imagen de la cara {face_position + 1}",
+                        type=["png", "jpg", "jpeg", "webp"],
+                        key=f"upload_face_{selected_index}_{face_position}",
+                    )
+                    if uploaded_face is not None:
+                        preview_bytes = uploaded_face.getvalue()
+                        st.image(preview_bytes, width=135)
+                        uploaded_paths.append(
+                            persist_uploaded_card_image(uploaded_face)
+                        )
+            if upload_face_total > 1:
+                st.caption(
+                    f"Caras necesarias: {upload_face_total}. "
+                    f"Subidas ahora: {len(uploaded_paths)}."
+                )
+            if len(uploaded_paths) == upload_face_total and uploaded_paths:
+                upload_identity = hashlib.sha256(
+                    "|".join(uploaded_paths).encode("utf-8")
+                ).hexdigest()[:12]
+                replacement = build_uploaded_replacement(
+                    selected,
+                    uploaded_paths,
+                    language=upload_language,
+                )
+                render_candidate_actions(
+                    selected_index,
+                    replacement,
+                    review_indices,
+                    f"upload_{selected_index}_{upload_identity}",
+                )
+            else:
+                remaining = upload_face_total - len(uploaded_paths)
+                if remaining > 0:
+                    st.info(
+                        f"Sube {remaining} imagen(es) más para poder seleccionar esta versión."
+                    )
 
 
 def mark_active_deck_reviewed() -> None:

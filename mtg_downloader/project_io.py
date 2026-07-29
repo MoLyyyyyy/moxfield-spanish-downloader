@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
 import json
+import binascii
+import tempfile
+from pathlib import Path
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
 from .models import DeckCard, ResolvedCard
-from .persistence import _resolved_from_dict, _resolved_to_dict
+from .persistence import _face_to_dict, _resolved_from_dict, _resolved_to_dict
 
-PROJECT_SCHEMA_VERSION = 2
-SUPPORTED_PROJECT_SCHEMA_VERSIONS = {1, 2}
-MAX_PROJECT_BYTES = 25_000_000
+PROJECT_SCHEMA_VERSION = 3
+SUPPORTED_PROJECT_SCHEMA_VERSIONS = {1, 2, 3}
+MAX_PROJECT_BYTES = 150_000_000
 
 
 class ProjectFileError(ValueError):
@@ -37,6 +42,130 @@ class LoadedProject:
     project_revision: int
     saved_at: str | None
     selection_summary: dict[str, int]
+    embedded_upload_count: int = 0
+
+
+
+
+def _project_uploads_dir() -> Path:
+    path = Path(tempfile.gettempdir()) / "moxfield_cartas_es_cache" / "user_uploads"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _upload_asset_id_from_face(face: Any) -> str | None:
+    if getattr(face, "provider", None) != "upload":
+        return None
+    face_data = _face_to_dict(face)
+    asset_id = face_data.get("embedded_asset_id")
+    if isinstance(asset_id, str) and asset_id:
+        return asset_id
+    url = face_data.get("url")
+    if isinstance(url, str) and url.startswith("upload://"):
+        parsed = urlparse(url)
+        token = parsed.netloc + parsed.path
+        return token or None
+    return None
+
+
+def _collect_embedded_upload_assets(
+    resolved_cards: list[ResolvedCard],
+) -> list[dict[str, Any]]:
+    assets: dict[str, dict[str, Any]] = {}
+    for card in resolved_cards:
+        variants = [card, *card.allocations]
+        for variant in variants:
+            for face in variant.faces:
+                asset_id = _upload_asset_id_from_face(face)
+                if not asset_id:
+                    continue
+                path_text = face.url[7:] if face.url.startswith("file://") else face.url
+                path = Path(path_text)
+                try:
+                    data = path.read_bytes()
+                except OSError as exc:
+                    raise ProjectFileError(
+                        f"No se puede leer la imagen subida '{path}'."
+                    ) from exc
+                assets[asset_id] = {
+                    "asset_id": asset_id,
+                    "extension": face.extension,
+                    "provider": "upload",
+                    "data_base64": base64.b64encode(data).decode("ascii"),
+                }
+    return [assets[key] for key in sorted(assets)]
+
+
+def _materialise_embedded_upload_assets(
+    payload: dict[str, Any],
+) -> tuple[dict[str, str], int]:
+    raw_assets = payload.get("embedded_upload_assets") or []
+    if not isinstance(raw_assets, list):
+        raise ProjectFileError(
+            "Las imágenes embebidas del proyecto no son válidas."
+        )
+
+    materialised: dict[str, str] = {}
+    uploads_dir = _project_uploads_dir()
+    for asset in raw_assets:
+        if not isinstance(asset, dict):
+            raise ProjectFileError(
+                "Las imágenes embebidas del proyecto no son válidas."
+            )
+        asset_id = str(asset.get("asset_id") or "").strip()
+        extension = str(asset.get("extension") or ".png").strip() or ".png"
+        data_base64 = asset.get("data_base64")
+        if not asset_id or not isinstance(data_base64, str):
+            raise ProjectFileError(
+                "Las imágenes embebidas del proyecto no son válidas."
+            )
+        try:
+            data = base64.b64decode(data_base64.encode("ascii"), validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise ProjectFileError(
+                "Una imagen embebida del proyecto no es válida."
+            ) from exc
+        if not extension.startswith("."):
+            extension = f".{extension}"
+        path = uploads_dir / asset_id
+        if path.suffix != extension:
+            path = uploads_dir / f"{asset_id}{extension}"
+        path.write_bytes(data)
+        materialised[asset_id] = str(path)
+    return materialised, len(materialised)
+
+
+def _inject_materialised_upload_paths(
+    selection_data: dict[str, Any],
+    asset_paths: dict[str, str],
+) -> dict[str, Any]:
+    copied = copy.deepcopy(selection_data)
+
+    def patch_faces(container: dict[str, Any]) -> None:
+        faces = container.get("faces")
+        if not isinstance(faces, list):
+            return
+        for face in faces:
+            if not isinstance(face, dict):
+                continue
+            if str(face.get("provider") or "") != "upload":
+                continue
+            asset_id = face.get("embedded_asset_id")
+            if not isinstance(asset_id, str) or not asset_id:
+                url = str(face.get("url") or "")
+                if url.startswith("upload://"):
+                    parsed = urlparse(url)
+                    asset_id = parsed.netloc + parsed.path
+            if isinstance(asset_id, str) and asset_id in asset_paths:
+                face["url"] = asset_paths[asset_id]
+
+    patch_faces(copied)
+    allocations = copied.get("allocations")
+    if isinstance(allocations, list):
+        for allocation in allocations:
+            if isinstance(allocation, dict):
+                patch_faces(allocation)
+    return copied
 
 
 def analysis_signature_for_config(
@@ -140,6 +269,7 @@ def export_project(
     project_revision: int = 0,
 ) -> bytes:
     rows = project_selection_rows(resolved_cards)
+    embedded_upload_assets = _collect_embedded_upload_assets(resolved_cards)
     payload = {
         "schema_version": PROJECT_SCHEMA_VERSION,
         "build_version": build_version,
@@ -154,6 +284,7 @@ def export_project(
         "selection_summary": project_selection_summary(
             resolved_cards
         ),
+        "embedded_upload_assets": embedded_upload_assets,
         "deck_summaries": copy.deepcopy(deck_summaries),
         "multi_deck_stats": copy.deepcopy(multi_deck_stats),
         "deck_analysis_stats": copy.deepcopy(deck_analysis_stats),
@@ -223,6 +354,8 @@ def import_project(
             "El proyecto no contiene cartas resueltas."
         )
 
+    asset_paths, embedded_upload_count = _materialise_embedded_upload_assets(payload)
+
     cards: list[DeckCard] = []
     resolved_cards: list[ResolvedCard] = []
     for row in rows:
@@ -243,10 +376,14 @@ def import_project(
         source = _source_from_dict(source_data)
         cards.append(source)
         try:
+            restored_selection = _inject_materialised_upload_paths(
+                selection_data,
+                asset_paths,
+            )
             resolved_cards.append(
                 _resolved_from_dict(
                     source,
-                    selection_data,
+                    restored_selection,
                     fallback_type_line=None,
                 )
             )
@@ -371,6 +508,7 @@ def import_project(
             else None
         ),
         selection_summary=calculated_summary,
+        embedded_upload_count=embedded_upload_count,
     )
 
 

@@ -564,3 +564,17 @@ versiones seleccionadas, sus caras, metadatos, repartos y ajustes de recorte.
 La huella se comprueba al cargar el JSON para detectar cualquier pérdida o
 alteración. Los archivos creados con el esquema anterior siguen siendo
 compatibles.
+
+
+### Subida manual de cartas
+
+Durante la revisión de una carta puedes elegir **Archivo propio** y subir una imagen manual para sustituir la versión actual. Si la carta tiene varias caras físicas, deberás subir todas sus caras. Las imágenes subidas se guardan en la caché local de la aplicación y pueden utilizarse en PDF y ZIP.
+
+### Gestión rápida de mazos
+
+El paso 1 ya no usa un selector numérico. Ahora puedes moverte entre mazos desde una barra horizontal y añadir uno nuevo con el botón **➕**.
+
+
+### Proyectos con imágenes subidas
+
+Si usas **Archivo propio** para sustituir cartas manualmente, al guardar el proyecto esas imágenes quedan embebidas dentro del JSON del proyecto. Al volver a cargarlo en otro equipo o tras reiniciar la app, Proxy Maker reconstruye automáticamente esas imágenes y conserva las selecciones hechas.
