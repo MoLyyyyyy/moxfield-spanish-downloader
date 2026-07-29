@@ -1,5 +1,5 @@
 Proxy Maker
-Build: 2026.07.29-workflow-v5.4-embedded-uploads
+Build: 2026.07.29-workflow-v5.4.1-deck-button-hotfix
 Fecha: 2026-07-28
 
 Incluye todas las correcciones anteriores y estas mejoras de flujo:
@@ -51,3 +51,10 @@ Mejoras v5.4:
 - Las imágenes subidas manualmente se incrustan dentro del JSON del proyecto.
 - Al cargar un proyecto se restauran automáticamente en la caché local.
 - Las rutas locales ya no afectan a la integridad del proyecto.
+
+
+Hotfix v5.4.1:
+- Los botones añadir y eliminar mazo ya no modifican directamente la clave
+  del selector st.radio después de crear el widget.
+- El cambio de pestaña se aplica mediante deck_config_active_pending en el
+  siguiente rerun, evitando StreamlitAPIException.

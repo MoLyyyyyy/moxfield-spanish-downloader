@@ -104,7 +104,7 @@ st.set_page_config(
 st.title("🃏 Proxy Maker")
 
 ANALYSIS_ENGINE_VERSION = "workflow-v5"
-BUILD_VERSION = "2026.07.29-workflow-v5.4-embedded-uploads"
+BUILD_VERSION = "2026.07.29-workflow-v5.4.1-deck-button-hotfix"
 SCRYFALL_ALTERNATIVE_ORDER_VERSION = "configurable-v2"
 
 
@@ -368,15 +368,25 @@ para que el siguiente mazo rellene los huecos del anterior.
             return f"Mazo {position + 1} · {label_source[:24]}"
         return f"Mazo {position + 1}"
 
+    pending_active_deck = st.session_state.pop(
+        "deck_config_active_pending",
+        None,
+    )
+    if pending_active_deck is not None:
+        st.session_state["deck_config_active"] = min(
+            max(int(pending_active_deck), 0),
+            len(deck_configs) - 1,
+        )
+    elif "deck_config_active" not in st.session_state:
+        st.session_state["deck_config_active"] = 0
+    elif int(st.session_state["deck_config_active"]) >= len(deck_configs):
+        st.session_state["deck_config_active"] = len(deck_configs) - 1
+
     selector_columns = st.columns([6, 1, 1])
     with selector_columns[0]:
         active_deck = st.radio(
             "Mazos",
             options=list(range(len(deck_configs))),
-            index=min(
-                int(st.session_state.get("deck_config_active", 0)),
-                len(deck_configs) - 1,
-            ),
             format_func=lambda item: deck_editor_label(
                 item,
                 deck_configs[item],
@@ -394,7 +404,9 @@ para que el siguiente mazo rellene los huecos del anterior.
         ):
             deck_configs.append(normalise_deck_config(None))
             st.session_state["deck_config_drafts"] = deck_configs
-            st.session_state["deck_config_active"] = len(deck_configs) - 1
+            st.session_state["deck_config_active_pending"] = (
+                len(deck_configs) - 1
+            )
             st.rerun()
     with selector_columns[2]:
         if st.button(
@@ -406,7 +418,7 @@ para que el siguiente mazo rellene los huecos del anterior.
             remove_index = min(max(active_deck, 0), len(deck_configs) - 1)
             deck_configs.pop(remove_index)
             st.session_state["deck_config_drafts"] = deck_configs
-            st.session_state["deck_config_active"] = min(
+            st.session_state["deck_config_active_pending"] = min(
                 remove_index,
                 len(deck_configs) - 1,
             )
