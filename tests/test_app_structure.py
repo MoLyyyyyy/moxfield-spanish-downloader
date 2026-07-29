@@ -399,9 +399,9 @@ def test_export_warns_about_paid_empty_slots() -> None:
 
 def test_multiple_deck_inputs_have_independent_settings() -> None:
     app = app_text()
-    assert '"Número de mazos"' in app
-    assert "max_value=12" in app
-    assert "deck_configs: list[dict[str, Any]]" in app
+    assert '"➕"' in app
+    assert 'Eliminar mazo actual' in app
+    assert "deck_configs = [" in app
     assert 'key=f"decklist_input_{deck_position}"' in app
     assert 'key=f"deck_source_{deck_position}"' in app
     assert 'key=f"deck_language_{deck_position}"' in app
@@ -426,8 +426,8 @@ def test_multiple_decks_fill_pages_continuously() -> None:
 
 def test_build_version_identifies_multideck_download() -> None:
     app = app_text()
-    assert 'BUILD_VERSION = "2026.07.28-workflow-v5.2-project-state-fix"' in app
-    assert '"Número de mazos"' in app
+    assert 'BUILD_VERSION = "2026.07.29-workflow-v5.4.2-deck-controls-hotfix"' in app
+    assert '"➕"' in app
 
 
 
@@ -547,3 +547,31 @@ def test_loaded_project_reports_restored_manual_versions() -> None:
     assert "selecciones manuales" in app
     assert "repartos" in app
     assert "ajustes de recorte restaurados" in app
+
+
+
+def test_analysis_button_uses_current_deck_count() -> None:
+    app = app_text()
+    button = app.index('analysis_submitted = st.button(')
+    assignment = app.rfind('deck_count = len(deck_configs)', 0, button)
+
+    assert assignment != -1
+    assert assignment < button
+    assert '"Analizar mazo" if deck_count == 1 else "Analizar mazos"' in app[
+        assignment:button + 180
+    ]
+
+
+def test_deck_controls_sync_widget_values_before_mutating_drafts() -> None:
+    app = app_text()
+    helper = app.index('def sync_deck_draft_from_widgets(')
+    add_button = app.index('help="Añadir mazo"', helper)
+    delete_button = app.index('help="Eliminar mazo actual"', add_button)
+    editor = app.index('st.markdown(f"### Configuración del mazo', delete_button)
+    controls = app[add_button:editor]
+
+    assert controls.count(
+        'sync_deck_draft_from_widgets(deck_configs, active_deck)'
+    ) == 2
+    assert 'deck_configs.append(normalise_deck_config(None))' in controls
+    assert 'deck_configs.pop(remove_index)' in controls

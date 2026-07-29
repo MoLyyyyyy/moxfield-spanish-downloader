@@ -104,7 +104,7 @@ st.set_page_config(
 st.title("🃏 Proxy Maker")
 
 ANALYSIS_ENGINE_VERSION = "workflow-v5"
-BUILD_VERSION = "2026.07.29-workflow-v5.4.1-deck-button-hotfix"
+BUILD_VERSION = "2026.07.29-workflow-v5.4.2-deck-controls-hotfix"
 SCRYFALL_ALTERNATIVE_ORDER_VERSION = "configurable-v2"
 
 
@@ -352,6 +352,86 @@ para que el siguiente mazo rellene los huecos del anterior.
         "del anterior."
     )
 
+    source_labels = {
+        "Scryfall · imágenes oficiales": "scryfall",
+        "MPCFill · diseños de la comunidad": "mpcfill",
+    }
+    language_labels = {
+        "Español": "es",
+        "Inglés": "en",
+    }
+    resolution_labels = {
+        "Respetar la edición indicada primero": "exact_first",
+        "Usar únicamente la edición indicada": "exact_only",
+        "Buscar en cualquier edición": "flexible",
+    }
+    quality_labels = {
+        "Preferir alta resolución": "prefer_highres",
+        "Aceptar imágenes lowres": "allow_lowres",
+        "Usar solo alta resolución": "highres_only",
+    }
+
+    def sync_deck_draft_from_widgets(
+        configs: list[dict[str, Any]],
+        position: int,
+    ) -> None:
+        """Persist the active editor before adding or deleting a deck."""
+        if not configs or not 0 <= position < len(configs):
+            return
+
+        config = dict(configs[position])
+        simple_keys = {
+            f"decklist_input_{position}": "decklist",
+            f"deck_name_{position}": "deck_name",
+            f"deck_fallback_{position}": "allow_language_fallback",
+            f"deck_sideboard_{position}": "include_sideboard",
+            f"deck_maybeboard_{position}": "include_maybeboard",
+        }
+        for widget_key, config_key in simple_keys.items():
+            if widget_key in st.session_state:
+                config[config_key] = st.session_state[widget_key]
+
+        mapped_keys = (
+            (
+                f"deck_source_{position}",
+                "preferred_image_source",
+                source_labels,
+            ),
+            (
+                f"deck_language_{position}",
+                "preferred_language",
+                language_labels,
+            ),
+            (
+                f"deck_resolution_{position}",
+                "resolution_mode",
+                resolution_labels,
+            ),
+            (
+                f"deck_quality_{position}",
+                "quality_mode",
+                quality_labels,
+            ),
+        )
+        for widget_key, config_key, choices in mapped_keys:
+            if widget_key in st.session_state:
+                selected_label = st.session_state[widget_key]
+                if selected_label in choices:
+                    config[config_key] = choices[selected_label]
+
+        image_quality_key = f"deck_image_quality_{position}"
+        if image_quality_key in st.session_state:
+            image_quality_label = str(
+                st.session_state[image_quality_key]
+            )
+            config["image_quality"] = (
+                "png"
+                if image_quality_label.startswith("PNG")
+                else "large"
+            )
+
+        configs[position] = normalise_deck_config(config)
+
     def deck_editor_label(position: int, config: dict[str, Any]) -> str:
         label_source = (
             config.get("deck_name")
@@ -402,6 +482,7 @@ para que el siguiente mazo rellene los huecos del anterior.
             width="stretch",
             disabled=len(deck_configs) >= 12,
         ):
+            sync_deck_draft_from_widgets(deck_configs, active_deck)
             deck_configs.append(normalise_deck_config(None))
             st.session_state["deck_config_drafts"] = deck_configs
             st.session_state["deck_config_active_pending"] = (
@@ -415,6 +496,7 @@ para que el siguiente mazo rellene los huecos del anterior.
             width="stretch",
             disabled=len(deck_configs) <= 1,
         ):
+            sync_deck_draft_from_widgets(deck_configs, active_deck)
             remove_index = min(max(active_deck, 0), len(deck_configs) - 1)
             deck_configs.pop(remove_index)
             st.session_state["deck_config_drafts"] = deck_configs
@@ -428,25 +510,6 @@ para que el siguiente mazo rellene los huecos del anterior.
         f"Editando el mazo {active_deck + 1} de {len(deck_configs)}. "
         "El orden de esta barra será también el orden del PDF final."
     )
-    source_labels = {
-        "Scryfall · imágenes oficiales": "scryfall",
-        "MPCFill · diseños de la comunidad": "mpcfill",
-    }
-    language_labels = {
-        "Español": "es",
-        "Inglés": "en",
-    }
-    resolution_labels = {
-        "Respetar la edición indicada primero": "exact_first",
-        "Usar únicamente la edición indicada": "exact_only",
-        "Buscar en cualquier edición": "flexible",
-    }
-    quality_labels = {
-        "Preferir alta resolución": "prefer_highres",
-        "Aceptar imágenes lowres": "allow_lowres",
-        "Usar solo alta resolución": "highres_only",
-    }
-
     deck_position = active_deck
     base = deck_configs[deck_position]
     st.markdown(f"### Configuración del mazo {deck_position + 1}")
@@ -595,6 +658,7 @@ para que el siguiente mazo rellene los huecos del anterior.
     )
     st.session_state["deck_config_drafts"] = deck_configs
 
+    deck_count = len(deck_configs)
     analysis_submitted = st.button(
         "Analizar mazo" if deck_count == 1 else "Analizar mazos",
         type="primary",

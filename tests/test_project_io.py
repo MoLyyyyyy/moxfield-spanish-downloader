@@ -201,7 +201,7 @@ def test_project_contains_and_verifies_selection_fingerprint() -> None:
     payload = project_payload()
     data = json.loads(payload)
 
-    assert data["schema_version"] == 2
+    assert data["schema_version"] == 3
     assert data["selection_fingerprint"] == (
         selection_fingerprint([selected_card()])
     )

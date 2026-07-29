@@ -578,3 +578,11 @@ El paso 1 ya no usa un selector numérico. Ahora puedes moverte entre mazos desd
 ### Proyectos con imágenes subidas
 
 Si usas **Archivo propio** para sustituir cartas manualmente, al guardar el proyecto esas imágenes quedan embebidas dentro del JSON del proyecto. Al volver a cargarlo en otro equipo o tras reiniciar la app, Proxy Maker reconstruye automáticamente esas imágenes y conserva las selecciones hechas.
+
+
+### Hotfix de controles de mazo v5.4.2
+
+Los botones **➕** y **🗑️** conservan el contenido actual del editor antes de
+modificar la lista de mazos. El texto del botón de análisis se calcula con el
+número real de borradores y ya no depende de la variable del antiguo selector
+numérico.

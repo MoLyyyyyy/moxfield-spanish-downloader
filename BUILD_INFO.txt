@@ -1,5 +1,5 @@
 Proxy Maker
-Build: 2026.07.29-workflow-v5.4.1-deck-button-hotfix
+Build: 2026.07.29-workflow-v5.4.2-deck-controls-hotfix
 Fecha: 2026-07-28
 
 Incluye todas las correcciones anteriores y estas mejoras de flujo:
@@ -58,3 +58,10 @@ Hotfix v5.4.1:
   del selector st.radio después de crear el widget.
 - El cambio de pestaña se aplica mediante deck_config_active_pending en el
   siguiente rerun, evitando StreamlitAPIException.
+
+
+Hotfix v5.4.2:
+- Define deck_count a partir de len(deck_configs) antes del botón de análisis.
+- Elimina el NameError heredado del antiguo selector numérico.
+- Sincroniza el editor activo antes de añadir o eliminar un mazo.
+- Los botones ➕ y 🗑️ siguen usando el estado pendiente compatible con Streamlit.
