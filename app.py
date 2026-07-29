@@ -29,6 +29,7 @@ from mtg_downloader.deck_workflow import (
     deck_position_for_card,
     deck_settings_label,
     indices_for_deck,
+    normalise_deck_active_index,
     normalise_deck_config,
     public_deck_settings,
 )
@@ -104,7 +105,7 @@ st.set_page_config(
 st.title("🃏 Proxy Maker")
 
 ANALYSIS_ENGINE_VERSION = "workflow-v5"
-BUILD_VERSION = "2026.07.29-workflow-v5.4.2-deck-controls-hotfix"
+BUILD_VERSION = "2026.07.29-workflow-v5.4.3-selector-state-hotfix"
 SCRYFALL_ALTERNATIVE_ORDER_VERSION = "configurable-v2"
 
 
@@ -335,9 +336,15 @@ para que el siguiente mazo rellene los huecos del anterior.
             for item in (saved_deck_configs or [normalise_deck_config(None)])
         ]
         st.session_state["deck_config_drafts_seed"] = saved_deck_signature
-        st.session_state["deck_config_active"] = min(
-            int(st.session_state.get("deck_config_active", 0)),
-            len(st.session_state["deck_config_drafts"]) - 1,
+        legacy_active_value = st.session_state.get(
+            "deck_config_active",
+            st.session_state.get("deck_config_active_index", 0),
+        )
+        st.session_state["deck_config_active_index"] = (
+            normalise_deck_active_index(
+                legacy_active_value,
+                len(st.session_state["deck_config_drafts"]),
+            )
         )
 
     deck_configs = [
@@ -452,29 +459,45 @@ para que el siguiente mazo rellene los huecos del anterior.
         "deck_config_active_pending",
         None,
     )
-    if pending_active_deck is not None:
-        st.session_state["deck_config_active"] = min(
-            max(int(pending_active_deck), 0),
-            len(deck_configs) - 1,
+    legacy_active_deck = st.session_state.pop(
+        "deck_config_active",
+        None,
+    )
+    requested_active_deck = (
+        pending_active_deck
+        if pending_active_deck is not None
+        else st.session_state.get(
+            "deck_config_selector_v2",
+            st.session_state.get(
+                "deck_config_active_index",
+                legacy_active_deck,
+            ),
         )
-    elif "deck_config_active" not in st.session_state:
-        st.session_state["deck_config_active"] = 0
-    elif int(st.session_state["deck_config_active"]) >= len(deck_configs):
-        st.session_state["deck_config_active"] = len(deck_configs) - 1
+    )
+    active_deck_index = normalise_deck_active_index(
+        requested_active_deck,
+        len(deck_configs),
+    )
+    st.session_state["deck_config_active_index"] = active_deck_index
+    st.session_state["deck_config_selector_v2"] = active_deck_index
 
     selector_columns = st.columns([6, 1, 1])
     with selector_columns[0]:
-        active_deck = st.radio(
-            "Mazos",
-            options=list(range(len(deck_configs))),
-            format_func=lambda item: deck_editor_label(
-                item,
-                deck_configs[item],
+        active_deck = normalise_deck_active_index(
+            st.radio(
+                "Mazos",
+                options=list(range(len(deck_configs))),
+                format_func=lambda item: deck_editor_label(
+                    item,
+                    deck_configs[item],
+                ),
+                horizontal=True,
+                label_visibility="collapsed",
+                key="deck_config_selector_v2",
             ),
-            horizontal=True,
-            label_visibility="collapsed",
-            key="deck_config_active",
+            len(deck_configs),
         )
+        st.session_state["deck_config_active_index"] = active_deck
     with selector_columns[1]:
         if st.button(
             "➕",

@@ -3,6 +3,7 @@ from mtg_downloader.deck_workflow import (
     deck_position_for_card,
     deck_settings_label,
     indices_for_deck,
+    normalise_deck_active_index,
 )
 
 
@@ -62,3 +63,18 @@ def test_settings_label_describes_one_deck() -> None:
             "allow_language_fallback": False,
         }
     ) == "MPCFill · inglés · sin respaldo"
+
+
+
+def test_normalise_deck_active_index_migrates_legacy_labels() -> None:
+    assert normalise_deck_active_index("Mazo 1", 4) == 0
+    assert normalise_deck_active_index("Mazo 3 · Sauron", 4) == 2
+    assert normalise_deck_active_index("2", 4) == 2
+    assert normalise_deck_active_index(3, 4) == 3
+
+
+def test_normalise_deck_active_index_clamps_invalid_values() -> None:
+    assert normalise_deck_active_index("desconocido", 3) == 0
+    assert normalise_deck_active_index(99, 3) == 2
+    assert normalise_deck_active_index(-4, 3) == 0
+    assert normalise_deck_active_index("Mazo 1", 0) == 0

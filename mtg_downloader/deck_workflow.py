@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import re
 from typing import Any
 
 DEFAULT_DECK_SETTINGS: dict[str, Any] = {
@@ -69,6 +70,36 @@ def normalise_deck_config(
         config.get("include_maybeboard", False)
     )
     return config
+
+
+def normalise_deck_active_index(
+    value: Any,
+    deck_count: int,
+) -> int:
+    """Convert legacy selector values such as 'Mazo 1' to an index."""
+    if deck_count < 1:
+        return 0
+
+    index = 0
+    if isinstance(value, bool):
+        index = int(value)
+    elif isinstance(value, int):
+        index = value
+    elif isinstance(value, float) and value.is_integer():
+        index = int(value)
+    elif isinstance(value, str):
+        cleaned = value.strip()
+        if cleaned.lstrip("-").isdigit():
+            index = int(cleaned)
+        else:
+            match = re.match(
+                r"(?i)^mazo\s+(\d+)(?:\s*·.*)?$",
+                cleaned,
+            )
+            if match:
+                index = int(match.group(1)) - 1
+
+    return min(max(index, 0), deck_count - 1)
 
 
 def deck_configs_from_analysis_config(

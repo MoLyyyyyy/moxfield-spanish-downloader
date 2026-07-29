@@ -401,7 +401,7 @@ def test_multiple_deck_inputs_have_independent_settings() -> None:
     app = app_text()
     assert '"➕"' in app
     assert 'Eliminar mazo actual' in app
-    assert "deck_configs = [" in app
+    assert 'deck_config_drafts' in app
     assert 'key=f"decklist_input_{deck_position}"' in app
     assert 'key=f"deck_source_{deck_position}"' in app
     assert 'key=f"deck_language_{deck_position}"' in app
@@ -426,7 +426,7 @@ def test_multiple_decks_fill_pages_continuously() -> None:
 
 def test_build_version_identifies_multideck_download() -> None:
     app = app_text()
-    assert 'BUILD_VERSION = "2026.07.29-workflow-v5.4.2-deck-controls-hotfix"' in app
+    assert 'BUILD_VERSION = "2026.07.29-workflow-v5.4.3-selector-state-hotfix"' in app
     assert '"➕"' in app
 
 
@@ -550,6 +550,47 @@ def test_loaded_project_reports_restored_manual_versions() -> None:
 
 
 
+def test_step_one_uses_add_deck_button_instead_of_number_selector() -> None:
+    app = app_text()
+    assert '"➕"' in app
+    assert 'Eliminar mazo actual' in app
+    assert 'deck_config_drafts' in app
+    assert 'Número de mazos' not in app
+
+
+def test_manual_upload_source_exists() -> None:
+    app = app_text()
+    assert '"Archivo propio"' in app
+    assert 'Sube tu propia imagen para sustituir esta carta.' in app
+    assert 'Imagen de la cara {face_position + 1}' in app
+    assert 'build_uploaded_replacement' in app
+
+
+
+def test_deck_buttons_do_not_mutate_radio_key_after_creation() -> None:
+    app = app_text()
+    radio_start = app.index('st.radio(\n                "Mazos",')
+    editor_start = app.index('st.markdown(f"### Configuración del mazo', radio_start)
+    button_section = app[radio_start:editor_start]
+
+    assert '"deck_config_active_pending"' in button_section
+    assert 'st.session_state["deck_config_active_pending"] = (' in button_section
+    assert 'st.session_state["deck_config_active_pending"] = min(' in button_section
+    assert 'st.session_state["deck_config_selector_v2"] =' not in button_section
+
+
+def test_pending_deck_is_applied_before_radio_creation() -> None:
+    app = app_text()
+    pending = app.index('pending_active_deck = st.session_state.pop(')
+    radio = app.index('st.radio(\n                "Mazos",')
+    assert pending < radio
+    state_block = app[pending:radio]
+    assert 'requested_active_deck = (' in state_block
+    assert 'normalise_deck_active_index(' in state_block
+    assert 'st.session_state["deck_config_selector_v2"] = active_deck_index' in state_block
+
+
+
 def test_analysis_button_uses_current_deck_count() -> None:
     app = app_text()
     button = app.index('analysis_submitted = st.button(')
@@ -575,3 +616,13 @@ def test_deck_controls_sync_widget_values_before_mutating_drafts() -> None:
     ) == 2
     assert 'deck_configs.append(normalise_deck_config(None))' in controls
     assert 'deck_configs.pop(remove_index)' in controls
+
+
+
+def test_deck_selector_migrates_legacy_string_state() -> None:
+    app = app_text()
+    assert 'legacy_active_deck = st.session_state.pop(' in app
+    assert 'key="deck_config_selector_v2"' in app
+    assert 'normalise_deck_active_index(' in app
+    assert 'int(st.session_state["deck_config_active"])' not in app
+    assert 'key="deck_config_active"' not in app

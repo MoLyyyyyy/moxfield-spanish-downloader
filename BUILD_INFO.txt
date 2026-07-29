@@ -1,5 +1,5 @@
 Proxy Maker
-Build: 2026.07.29-workflow-v5.4.2-deck-controls-hotfix
+Build: 2026.07.29-workflow-v5.4.3-selector-state-hotfix
 Fecha: 2026-07-28
 
 Incluye todas las correcciones anteriores y estas mejoras de flujo:
@@ -65,3 +65,10 @@ Hotfix v5.4.2:
 - Elimina el NameError heredado del antiguo selector numérico.
 - Sincroniza el editor activo antes de añadir o eliminar un mazo.
 - Los botones ➕ y 🗑️ siguen usando el estado pendiente compatible con Streamlit.
+
+
+Hotfix v5.4.3:
+- Migra valores antiguos como "Mazo 1" a índices numéricos.
+- El selector usa una clave nueva: deck_config_selector_v2.
+- El índice activo interno está separado del estado del widget.
+- No quedan conversiones int() directas sobre el valor del selector.
