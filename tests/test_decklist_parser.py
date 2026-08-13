@@ -45,3 +45,24 @@ Deck:
     )
 
     assert len(cards) == 2
+
+
+def test_nine_nazgul_printings_remain_nine_entries() -> None:
+    cards = parse_exported_decklist(
+        """
+1 Nazgûl (LTR) 336
+1 Nazgûl (LTR) 335
+1 Nazgûl (LTR) 100
+1 Nazgûl (LTR) 332
+1 Nazgûl (LTR) 334
+1 Nazgûl (LTR) 333
+1 Nazgûl (LTR) 337
+1 Nazgûl (LTR) 338
+1 Nazgûl (LTR) 339
+"""
+    )
+
+    assert len(cards) == 9
+    assert {card.collector_number for card in cards} == {
+        "100", "332", "333", "334", "335", "336", "337", "338", "339"
+    }

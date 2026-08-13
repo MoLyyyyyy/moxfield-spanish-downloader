@@ -99,3 +99,90 @@ def test_batch_analysis_uses_current_mpcfill_http_shape(
     assert all("autor preferido" in result.status for result in results)
     assert client.last_batch_stats["queries_with_hits"] == 99
     assert client.last_batch_stats["resolved"] == 99
+
+
+def test_legacy_search_does_not_collapse_same_name_different_collectors(
+    tmp_path: Path,
+) -> None:
+    seen_collectors: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/2/sources/":
+            return httpx.Response(
+                200,
+                json={
+                    "results": {
+                        "1": {
+                            "pk": 1,
+                            "key": "psilos",
+                            "name": "PsilosX Proxy Drive",
+                        }
+                    }
+                },
+            )
+
+        if request.url.path == "/3/editorSearch/":
+            return httpx.Response(
+                404,
+                request=request,
+                json={"detail": "legacy only"},
+            )
+
+        if request.url.path == "/2/editorSearch/":
+            payload = json.loads(request.content)
+            queries = payload["queries"]
+            assert len(queries) == 1
+            collector = str(queries[0].get("collectorNumber") or "")
+            seen_collectors.append(collector)
+            return httpx.Response(
+                200,
+                json={
+                    "results": {
+                        "nazgûl": {
+                            "CARD": [f"nazgul-{collector}"]
+                        }
+                    }
+                },
+            )
+
+        raise AssertionError(request.url)
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = MpcFillClient(tmp_path, client=http_client)
+    query_documents = {
+        f"nazgul-{number}": {
+            "query": "nazgûl",
+            "cardType": "CARD",
+            "expansionCode": "LTR",
+            "collectorNumber": number,
+        }
+        for number in (
+            "336", "335", "100", "332", "334",
+            "333", "337", "338", "339",
+        )
+    }
+
+    try:
+        results, request_count = client._search_many_identifiers(
+            query_documents,
+            languages=("EN",),
+            minimum_dpi=300,
+            preferred_sources=DEFAULT_PREFERRED_SOURCES,
+            fuzzy_search=False,
+        )
+    finally:
+        client.close()
+
+    collectors = [
+        "336", "335", "100", "332", "334",
+        "333", "337", "338", "339",
+    ]
+    assert sorted(seen_collectors) == sorted(collectors)
+    assert request_count == 9  # nine independent legacy requests
+    assert {
+        key: values[0]
+        for key, values in results.items()
+    } == {
+        f"nazgul-{number}": f"nazgul-{number}"
+        for number in collectors
+    }

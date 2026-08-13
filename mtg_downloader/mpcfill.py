@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 import re
 import string
 import time
@@ -622,38 +623,73 @@ class MpcFillClient:
                 if exc.status_code != 404:
                     raise
 
-                legacy_payload = {
-                    "searchSettings": search_settings,
-                    "queries": list(chunk.values()),
-                }
-                legacy = self._request_json(
-                    "2/editorSearch/",
-                    method="POST",
-                    payload=legacy_payload,
-                )
-                request_count += 1
-                legacy_results = legacy.get("results")
-                if not isinstance(legacy_results, dict):
-                    raise MpcFillError(
-                        "MPCFill no devolvió resultados de búsqueda."
+                legacy_identities = [
+                    (
+                        str(document.get("query") or ""),
+                        str(document.get("cardType") or "CARD"),
                     )
+                    for document in chunk.values()
+                ]
+                identity_counts = Counter(legacy_identities)
 
-                for key, query_document in chunk.items():
-                    query = str(query_document.get("query") or "")
-                    card_type = str(
-                        query_document.get("cardType") or "CARD"
+                def legacy_search(
+                    subchunk: dict[str, dict[str, Any]],
+                ) -> None:
+                    nonlocal request_count
+                    if not subchunk:
+                        return
+                    legacy_payload = {
+                        "searchSettings": search_settings,
+                        "queries": list(subchunk.values()),
+                    }
+                    legacy = self._request_json(
+                        "2/editorSearch/",
+                        method="POST",
+                        payload=legacy_payload,
                     )
-                    per_query = legacy_results.get(query, {})
-                    identifiers = (
-                        per_query.get(card_type, [])
-                        if isinstance(per_query, dict)
-                        else []
+                    request_count += 1
+                    legacy_results = legacy.get("results")
+                    if not isinstance(legacy_results, dict):
+                        raise MpcFillError(
+                            "MPCFill no devolvió resultados de búsqueda."
+                        )
+                    for key, query_document in subchunk.items():
+                        query = str(query_document.get("query") or "")
+                        card_type = str(
+                            query_document.get("cardType") or "CARD"
+                        )
+                        per_query = legacy_results.get(query, {})
+                        identifiers = (
+                            per_query.get(card_type, [])
+                            if isinstance(per_query, dict)
+                            else []
+                        )
+                        results[key] = (
+                            [str(value) for value in identifiers]
+                            if isinstance(identifiers, list)
+                            else []
+                        )
+
+                unique_chunk = {
+                    key: document
+                    for key, document in chunk.items()
+                    if identity_counts[(
+                        str(document.get("query") or ""),
+                        str(document.get("cardType") or "CARD"),
+                    )] == 1
+                }
+                legacy_search(unique_chunk)
+
+                for key, document in chunk.items():
+                    identity = (
+                        str(document.get("query") or ""),
+                        str(document.get("cardType") or "CARD"),
                     )
-                    results[key] = (
-                        [str(value) for value in identifiers]
-                        if isinstance(identifiers, list)
-                        else []
-                    )
+                    if identity_counts[identity] > 1:
+                        # Legacy MPCFill keys results only by query text.
+                        # Sending duplicate names together would collapse
+                        # distinct set/collector printings such as Nazgûl.
+                        legacy_search({key: document})
 
         return results, request_count
 

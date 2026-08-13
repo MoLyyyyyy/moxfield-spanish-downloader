@@ -1,5 +1,5 @@
 Proxy Maker
-Build: 2026.07.29-workflow-v5.4.3-selector-state-hotfix
+Build: 2026.08.13-workflow-v5.4.4-printing-identity-hotfix
 Fecha: 2026-07-28
 
 Incluye todas las correcciones anteriores y estas mejoras de flujo:
@@ -72,3 +72,11 @@ Hotfix v5.4.3:
 - El selector usa una clave nueva: deck_config_selector_v2.
 - El índice activo interno está separado del estado del widget.
 - No quedan conversiones int() directas sobre el valor del selector.
+
+
+Hotfix v5.4.4:
+- Identidad de entrada por nombre + set + collector.
+- Los 9 Nazgûl de LTR ya no se colapsan en el fallback legacy de MPCFill.
+- Búsqueda por nombre canónico de Scryfall para reskins como Paths of the Dead / Cavern of Souls.
+- Reintento automático de MPCFill por nombre canónico cuando la búsqueda del nombre impreso falla.
+- ANALYSIS_ENGINE_VERSION = workflow-v5.4.4-printing-identity.

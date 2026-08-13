@@ -327,7 +327,7 @@ def test_mpcfill_analysis_is_batched_per_deck() -> None:
 
 def test_analysis_engine_version_invalidates_stale_results() -> None:
     app = app_text()
-    assert 'ANALYSIS_ENGINE_VERSION = "workflow-v5"' in app
+    assert 'ANALYSIS_ENGINE_VERSION = "workflow-v5.4.4-printing-identity"' in app
     assert "analysis_signature_for_config(" in app
     assert "engine_version=ANALYSIS_ENGINE_VERSION" in app
 
@@ -426,7 +426,7 @@ def test_multiple_decks_fill_pages_continuously() -> None:
 
 def test_build_version_identifies_multideck_download() -> None:
     app = app_text()
-    assert 'BUILD_VERSION = "2026.07.29-workflow-v5.4.3-selector-state-hotfix"' in app
+    assert 'BUILD_VERSION = "2026.08.13-workflow-v5.4.4-printing-identity-hotfix"' in app
     assert '"➕"' in app
 
 
@@ -478,7 +478,7 @@ def test_version_caches_include_full_dual_card_identity() -> None:
     assert "selected.source.set_code or ''" in app
     assert "selected.source.collector_number or ''" in app
     assert "client.search_designs(" in app
-    assert "canonical_card_name(selected.source.name)," in app
+    assert "resolved_search_name(selected)," in app
 
 
 
@@ -626,3 +626,17 @@ def test_deck_selector_migrates_legacy_string_state() -> None:
     assert 'normalise_deck_active_index(' in app
     assert 'int(st.session_state["deck_config_active"])' not in app
     assert 'key="deck_config_active"' not in app
+
+
+def test_review_searches_use_canonical_resolved_name() -> None:
+    app = app_text()
+    assert "resolved_search_name(selected)" in app
+    assert "Nombre de búsqueda canónico" in app
+    assert "repair_mpcfill_alias_failures(" in app
+
+
+def test_review_selector_shows_requested_printing_identity() -> None:
+    app = app_text()
+    assert "cards[index].source.collector_number or '?'" in app
+    assert "Unificar duplicados exactos con la primera selección" in app
+    assert "source_printing_key(cards[index].source)" in app

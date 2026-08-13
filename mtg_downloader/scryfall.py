@@ -596,6 +596,20 @@ class ScryfallClient:
         path.write_bytes(data)
         return data
 
+    def canonical_name_for_printing(self, card: DeckCard) -> str:
+        """Resolve reskin/display names through an exact Scryfall printing."""
+        if card.set_code and card.collector_number:
+            candidate = self._get_card_by_printing(
+                card.set_code,
+                card.collector_number,
+                language=None,
+            )
+            if isinstance(candidate, dict):
+                name = candidate.get("name")
+                if isinstance(name, str) and name.strip():
+                    return canonical_card_name(name)
+        return canonical_card_name(card.name)
+
     def _get_card_by_printing(
         self, set_code: str, collector_number: str, language: str | None
     ) -> dict[str, Any] | None:

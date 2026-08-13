@@ -250,3 +250,79 @@ def test_project_rejects_mismatched_deck_count() -> None:
             json.dumps(data),
             engine_version="workflow-v5",
         )
+
+
+from pathlib import Path
+
+
+def uploaded_card(tmp_path: Path) -> ResolvedCard:
+    front = tmp_path / "custom-front.png"
+    back = tmp_path / "custom-back.png"
+    front.write_bytes(b"front-custom-bytes")
+    back.write_bytes(b"back-custom-bytes")
+    return ResolvedCard(
+        source=DeckCard(1, "Custom DFC", set_code="cst", collector_number="1"),
+        status="Imagen subida manualmente",
+        provider="upload",
+        type_line="Artifact // Artifact",
+        language="es",
+        printed_name="Carta personalizada",
+        selected_set="cst",
+        collector_number="1",
+        faces=[
+            ImageFace("Front", str(front), ".png", provider="upload"),
+            ImageFace("Back", str(back), ".png", provider="upload"),
+        ],
+    )
+
+
+def test_project_embeds_uploaded_images_and_restores_them(tmp_path) -> None:
+    card = uploaded_card(tmp_path)
+    config = {
+        "decks": [
+            {
+                "decklist": "1 Custom DFC (CST) 1",
+                "deck_name": "Custom",
+                "preferred_language": "es",
+            }
+        ]
+    }
+    signature = analysis_signature_for_config(
+        config,
+        engine_version="workflow-v5",
+    )
+    payload = export_project(
+        analysis_config=config,
+        analysis_signature=signature,
+        resolved_cards=[card],
+        deck_summaries=[
+            {
+                "index": 1,
+                "name": "Custom",
+                "copies": 1,
+                "start_index": 0,
+                "end_index": 1,
+            }
+        ],
+        multi_deck_stats={},
+        deck_analysis_stats=[{}],
+        reviewed_decks=[0],
+        active_review_deck=0,
+        review_selected_index=0,
+        workspace_mode="Editar cartas",
+        review_only_problematic=False,
+        pdf_settings={},
+        build_version="test",
+    )
+    data = json.loads(payload)
+    assert len(data["embedded_upload_assets"]) == 2
+
+    loaded = import_project(payload, engine_version="workflow-v5")
+
+    assert loaded.embedded_upload_count == 2
+    restored = loaded.resolved_cards[0]
+    assert restored.provider == "upload"
+    assert restored.faces[0].provider == "upload"
+    assert Path(restored.faces[0].url).read_bytes() == b"front-custom-bytes"
+    assert Path(restored.faces[1].url).read_bytes() == b"back-custom-bytes"
+    assert _resolved_to_dict(restored) == _resolved_to_dict(card)

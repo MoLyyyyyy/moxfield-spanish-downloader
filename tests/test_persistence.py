@@ -32,3 +32,17 @@ def test_unmatched_entries_are_reported() -> None:
     other = ResolvedCard(source=DeckCard(1, "Island"), status="ok")
     _, warnings = import_selection_config(payload.decode(), [other])
     assert warnings
+
+
+from pathlib import Path
+
+from mtg_downloader.persistence import _face_to_dict
+
+
+def test_upload_face_urls_are_canonicalised(tmp_path: Path) -> None:
+    path = tmp_path / "manual.png"
+    path.write_bytes(b"manual-bytes")
+    face = ImageFace("Manual", str(path), ".png", provider="upload")
+    payload = _face_to_dict(face)
+    assert payload["url"].startswith("upload://")
+    assert payload["embedded_asset_id"] in payload["url"]

@@ -84,6 +84,10 @@ from mtg_downloader.review import (
     review_row,
 )
 from mtg_downloader.scryfall import ScryfallClient, ScryfallError
+from mtg_downloader.search_identity import (
+    resolved_search_name,
+    source_printing_key,
+)
 from mtg_downloader.selections import (
     AllocationError,
     add_variant,
@@ -104,8 +108,8 @@ st.set_page_config(
 
 st.title("🃏 Proxy Maker")
 
-ANALYSIS_ENGINE_VERSION = "workflow-v5"
-BUILD_VERSION = "2026.07.29-workflow-v5.4.3-selector-state-hotfix"
+ANALYSIS_ENGINE_VERSION = "workflow-v5.4.4-printing-identity"
+BUILD_VERSION = "2026.08.13-workflow-v5.4.4-printing-identity-hotfix"
 SCRYFALL_ALTERNATIVE_ORDER_VERSION = "configurable-v2"
 
 
@@ -1020,6 +1024,79 @@ def prefetch_selection(
         pass
 
 
+
+
+def repair_mpcfill_alias_failures(
+    source_cards: list[DeckCard],
+    resolved_cards: list[ResolvedCard],
+    config: dict[str, Any],
+) -> tuple[list[ResolvedCard], int]:
+    """Retry unresolved reskins using Scryfall's canonical card name."""
+    failed_positions = [
+        position
+        for position, (source, resolved) in enumerate(
+            zip(source_cards, resolved_cards)
+        )
+        if not resolved.faces and source.set_code and source.collector_number
+    ]
+    if not failed_positions:
+        return resolved_cards, 0
+
+    preferred_language = str(config.get("preferred_language") or "es")
+    languages = [preferred_language.upper()]
+    if config.get("allow_language_fallback", True):
+        languages.append("EN" if preferred_language == "es" else "ES")
+    quality_mode = str(config.get("quality_mode") or "prefer_highres")
+    minimum_dpi = 800 if quality_mode == "highres_only" else 300
+    repaired = 0
+    updated = list(resolved_cards)
+
+    with ScryfallClient(
+        cache_dir(),
+        image_quality=str(config.get("image_quality") or "png"),
+    ) as scryfall_client, MpcFillClient(mpc_cache_dir()) as mpc_client:
+        for position in failed_positions:
+            source = source_cards[position]
+            try:
+                canonical_name = scryfall_client.canonical_name_for_printing(
+                    source
+                )
+            except ScryfallError:
+                continue
+            if (
+                canonical_name.casefold()
+                == canonical_card_name(source.name).casefold()
+            ):
+                continue
+            try:
+                designs = mpc_client.search_designs(
+                    canonical_name,
+                    languages=tuple(languages),
+                    minimum_dpi=minimum_dpi,
+                    max_results=12,
+                    preferred_sources=DEFAULT_PREFERRED_SOURCES,
+                    fuzzy_search=True,
+                )
+            except MpcFillError:
+                continue
+            if not designs:
+                continue
+            replacement = mpc_client.resolve_candidate(
+                source,
+                designs[0],
+                crop_mode=CROP_AUTO,
+                type_line=updated[position].type_line,
+            )
+            replacement.status = (
+                f"{replacement.status} · nombre canónico: {canonical_name}"
+            )
+            if replacement.scryfall_data is not None:
+                replacement.scryfall_data["canonical_name"] = canonical_name
+            updated[position] = replacement
+            repaired += 1
+
+    return updated, repaired
+
 def enforce_automatic_mpcfill_crop(card: ResolvedCard) -> ResolvedCard:
     updated = copy.deepcopy(card)
     variants = effective_variants(updated)
@@ -1142,7 +1219,7 @@ def apply_bulk_action(indices: list[int], action: str) -> None:
                 for position, index in enumerate(indices, start=1):
                     status.write(f"Buscando MPCFill para **{cards[index].source.name}**")
                     designs = client.search_designs(
-                        cards[index].source.name,
+                        resolved_search_name(cards[index]),
                         minimum_dpi=300,
                         max_results=1,
                     )
@@ -1153,14 +1230,17 @@ def apply_bulk_action(indices: list[int], action: str) -> None:
                             crop_mode=CROP_AUTO,
                             type_line=cards[index].type_line,
                         )
+                        canonical_name = resolved_search_name(cards[index])
+                        if replacement.scryfall_data is not None:
+                            replacement.scryfall_data["canonical_name"] = canonical_name
                         cards[index] = replace_all_copies(cards[index], replacement)
                         prefetch_selection(cards[index], index)
                     progress.progress(position / len(indices))
 
-        elif action == "Unificar por nombre con la primera selección":
+        elif action == "Unificar duplicados exactos con la primera selección":
             template = cards[indices[0]]
             for position, index in enumerate(indices, start=1):
-                if cards[index].source.name.casefold() == template.source.name.casefold():
+                if source_printing_key(cards[index].source) == source_printing_key(template.source):
                     cards[index] = clone_selection_for_card(template, cards[index])
                     prefetch_selection(cards[index], index)
                 progress.progress(position / len(indices))
@@ -1232,8 +1312,11 @@ def reanalyse_active_deck(
                 f"**{summary['name']}** con MPCFill..."
             )
             with MpcFillClient(mpc_cache_dir()) as client:
+                target_source_cards = [
+                    source_cards[index] for index in target_indices
+                ]
                 resolved = client.resolve_many_auto(
-                    [source_cards[index] for index in target_indices],
+                    target_source_cards,
                     preferred_language=config["preferred_language"],
                     allow_language_fallback=config[
                         "allow_language_fallback"
@@ -1243,6 +1326,12 @@ def reanalyse_active_deck(
                     preferred_sources=DEFAULT_PREFERRED_SOURCES,
                 )
                 stats = dict(client.last_batch_stats)
+            resolved, alias_repaired = repair_mpcfill_alias_failures(
+                target_source_cards,
+                resolved,
+                config,
+            )
+            stats["canonical_name_fallback"] = alias_repaired
             for position, (index, replacement) in enumerate(
                 zip(target_indices, resolved),
                 start=1,
@@ -1452,6 +1541,14 @@ if app_step == 1 and analysis_submitted:
                         )
                         mpc_stats = dict(client.last_batch_stats)
 
+                    deck_resolved, alias_repaired = (
+                        repair_mpcfill_alias_failures(
+                            deck_cards,
+                            deck_resolved,
+                            config,
+                        )
+                    )
+                    mpc_stats["canonical_name_fallback"] = alias_repaired
                     deck_stat.update(
                         {
                             "resolved": int(
@@ -1676,7 +1773,7 @@ def render_bulk_panel(filtered: list[int]) -> None:
                 "Máxima calidad disponible",
                 "Respetar impresión exacta",
                 "Primer diseño MPCFill de mayor DPI",
-                "Unificar por nombre con la primera selección",
+                "Unificar duplicados exactos con la primera selección",
             ],
             key=f"bulk_action_{deck_position}",
         )
@@ -2176,7 +2273,9 @@ def render_review_panel() -> None:
         options=review_indices,
         index=review_indices.index(current),
         format_func=lambda index: (
-            f"{cards[index].source.quantity}× {cards[index].source.name} — "
+            f"{cards[index].source.quantity}× {cards[index].source.name} "
+            f"[{(cards[index].source.set_code or '?').upper()} "
+            f"{cards[index].source.collector_number or '?'}] — "
             f"{gallery_status_label(cards[index])}"
         ),
         key=f"review_selector_{selector_version}",
@@ -2272,6 +2371,12 @@ def render_review_panel() -> None:
             horizontal=True,
             key=source_state_key,
         )
+        search_name = resolved_search_name(selected)
+        if search_name.casefold() != canonical_card_name(selected.source.name).casefold():
+            st.caption(
+                f"Nombre de búsqueda canónico: **{search_name}** "
+                f"(la lista usa **{selected.source.name}**)."
+            )
 
         primary_language = (
             preferred_language
@@ -2414,7 +2519,7 @@ def render_review_panel() -> None:
             )
             visible_limit = int(st.session_state.get(visible_key, 12))
             card_cache_identity = (
-                f"{canonical_card_name(selected.source.name)}|"
+                f"{resolved_search_name(selected)}|"
                 f"{selected.source.set_code or ''}|"
                 f"{selected.source.collector_number or ''}"
             )
@@ -2432,7 +2537,7 @@ def render_review_panel() -> None:
                             image_quality=image_quality,
                         ) as client:
                             cache[cache_key] = client.search_alternatives(
-                                selected.source.name,
+                                resolved_search_name(selected),
                                 languages=languages,
                                 highres_only=highres_only,
                                 max_results=175,
@@ -2530,7 +2635,7 @@ def render_review_panel() -> None:
             )
             visible_limit = int(st.session_state.get(visible_key, 12))
             card_cache_identity = (
-                f"{canonical_card_name(selected.source.name)}|"
+                f"{resolved_search_name(selected)}|"
                 f"{selected.source.set_code or ''}|"
                 f"{selected.source.collector_number or ''}"
             )
@@ -2544,7 +2649,7 @@ def render_review_panel() -> None:
                     if cache_key not in cache:
                         with st.spinner("Buscando diseños MPCFill..."):
                             cache[cache_key] = client.search_designs(
-                                canonical_card_name(selected.source.name),
+                                resolved_search_name(selected),
                                 languages=languages,
                                 minimum_dpi=minimum_dpi,
                                 max_results=visible_limit,
@@ -2598,6 +2703,8 @@ def render_review_panel() -> None:
                                     crop_mode=CROP_AUTO,
                                     type_line=selected.type_line,
                                 )
+                                if replacement.scryfall_data is not None:
+                                    replacement.scryfall_data["canonical_name"] = search_name
                                 render_candidate_actions(
                                     selected_index,
                                     replacement,
