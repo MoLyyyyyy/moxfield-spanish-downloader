@@ -108,8 +108,8 @@ st.set_page_config(
 
 st.title("🃏 Proxy Maker")
 
-ANALYSIS_ENGINE_VERSION = "workflow-v5.4.4-printing-identity"
-BUILD_VERSION = "2026.08.13-workflow-v5.4.4-printing-identity-hotfix"
+ANALYSIS_ENGINE_VERSION = "workflow-v5.4.5-reskin-search"
+BUILD_VERSION = "2026.08.15-workflow-v5.4.5-reskin-search-hotfix"
 SCRYFALL_ALTERNATIVE_ORDER_VERSION = "configurable-v2"
 
 
@@ -951,6 +951,86 @@ def build_uploaded_replacement(
     )
 
 
+def printing_search_names(card: ResolvedCard) -> tuple[str, ...]:
+    """Resolve stable search aliases for reskins and renamed printings."""
+    existing = resolved_search_name(card)
+    names: list[str] = [existing]
+    source = card.source
+    if source.set_code and source.collector_number:
+        cache = st.session_state.setdefault(
+            "printing_search_name_cache",
+            {},
+        )
+        cache_key = (
+            f"{source.set_code.casefold()}|"
+            f"{str(source.collector_number).casefold()}"
+        )
+        if cache_key not in cache:
+            try:
+                with ScryfallClient(
+                    cache_dir(),
+                    image_quality=image_quality_for_card_index(
+                        st.session_state.get("review_selected_index", 0)
+                    )
+                    if st.session_state.get("resolved_cards")
+                    else "png",
+                ) as client:
+                    cache[cache_key] = list(
+                        client.search_names_for_printing(source)
+                    )
+            except (ScryfallError, OSError, IndexError):
+                cache[cache_key] = []
+        names = list(cache.get(cache_key) or []) + names
+
+    names.append(canonical_card_name(source.name))
+    unique: list[str] = []
+    seen: set[str] = set()
+    for name in names:
+        clean = canonical_card_name(str(name or ""))
+        identity = clean.casefold()
+        if not clean or identity in seen:
+            continue
+        seen.add(identity)
+        unique.append(clean)
+    return tuple(unique)
+
+
+def search_mpcfill_with_aliases(
+    client: MpcFillClient,
+    card: ResolvedCard,
+    **kwargs: Any,
+) -> tuple[list[dict[str, Any]], str]:
+    """Search MPCFill using Oracle name first, then the printed alias."""
+    names = printing_search_names(card)
+    merged: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    used_name = names[0] if names else canonical_card_name(card.source.name)
+    max_results = int(kwargs.get("max_results") or 12)
+    for name in names:
+        try:
+            designs = client.search_designs(name, **kwargs)
+        except MpcFillError:
+            continue
+        if designs and not merged:
+            used_name = name
+        for design in designs:
+            identity = str(
+                design.get("identifier")
+                or design.get("id")
+                or design.get("download_url")
+                or design.get("downloadLink")
+                or design.get("name")
+                or ""
+            )
+            if identity in seen:
+                continue
+            seen.add(identity)
+            merged.append(design)
+            if len(merged) >= max_results:
+                return merged, used_name
+    return merged, used_name
+
+
 def previous_index(indices: list[int], current: int) -> int:
     if current not in indices:
         return indices[0]
@@ -1058,29 +1138,31 @@ def repair_mpcfill_alias_failures(
         for position in failed_positions:
             source = source_cards[position]
             try:
-                canonical_name = scryfall_client.canonical_name_for_printing(
+                search_names = scryfall_client.search_names_for_printing(
                     source
                 )
             except ScryfallError:
                 continue
-            if (
-                canonical_name.casefold()
-                == canonical_card_name(source.name).casefold()
-            ):
-                continue
-            try:
-                designs = mpc_client.search_designs(
-                    canonical_name,
-                    languages=tuple(languages),
-                    minimum_dpi=minimum_dpi,
-                    max_results=12,
-                    preferred_sources=DEFAULT_PREFERRED_SOURCES,
-                    fuzzy_search=True,
-                )
-            except MpcFillError:
-                continue
+            designs: list[dict[str, Any]] = []
+            used_name = canonical_card_name(source.name)
+            for search_name in search_names:
+                try:
+                    designs = mpc_client.search_designs(
+                        search_name,
+                        languages=tuple(languages),
+                        minimum_dpi=minimum_dpi,
+                        max_results=12,
+                        preferred_sources=DEFAULT_PREFERRED_SOURCES,
+                        fuzzy_search=True,
+                    )
+                except MpcFillError:
+                    continue
+                if designs:
+                    used_name = search_name
+                    break
             if not designs:
                 continue
+            canonical_name = search_names[0]
             replacement = mpc_client.resolve_candidate(
                 source,
                 designs[0],
@@ -1088,7 +1170,7 @@ def repair_mpcfill_alias_failures(
                 type_line=updated[position].type_line,
             )
             replacement.status = (
-                f"{replacement.status} · nombre canónico: {canonical_name}"
+                f"{replacement.status} · búsqueda: {used_name}"
             )
             if replacement.scryfall_data is not None:
                 replacement.scryfall_data["canonical_name"] = canonical_name
@@ -1218,8 +1300,9 @@ def apply_bulk_action(indices: list[int], action: str) -> None:
             with MpcFillClient(mpc_cache_dir()) as client:
                 for position, index in enumerate(indices, start=1):
                     status.write(f"Buscando MPCFill para **{cards[index].source.name}**")
-                    designs = client.search_designs(
-                        resolved_search_name(cards[index]),
+                    designs, used_name = search_mpcfill_with_aliases(
+                        client,
+                        cards[index],
                         minimum_dpi=300,
                         max_results=1,
                     )
@@ -2371,11 +2454,13 @@ def render_review_panel() -> None:
             horizontal=True,
             key=source_state_key,
         )
-        search_name = resolved_search_name(selected)
+        search_names = printing_search_names(selected)
+        search_name = search_names[0]
         if search_name.casefold() != canonical_card_name(selected.source.name).casefold():
+            aliases = " → ".join(search_names[:3])
             st.caption(
-                f"Nombre de búsqueda canónico: **{search_name}** "
-                f"(la lista usa **{selected.source.name}**)."
+                f"Nombres de búsqueda: **{aliases}**. "
+                f"La lista usa **{selected.source.name}**."
             )
 
         primary_language = (
@@ -2519,7 +2604,7 @@ def render_review_panel() -> None:
             )
             visible_limit = int(st.session_state.get(visible_key, 12))
             card_cache_identity = (
-                f"{resolved_search_name(selected)}|"
+                f"{'|'.join(search_names)}|"
                 f"{selected.source.set_code or ''}|"
                 f"{selected.source.collector_number or ''}"
             )
@@ -2537,7 +2622,7 @@ def render_review_panel() -> None:
                             image_quality=image_quality,
                         ) as client:
                             cache[cache_key] = client.search_alternatives(
-                                resolved_search_name(selected),
+                                search_name,
                                 languages=languages,
                                 highres_only=highres_only,
                                 max_results=175,
@@ -2635,7 +2720,7 @@ def render_review_panel() -> None:
             )
             visible_limit = int(st.session_state.get(visible_key, 12))
             card_cache_identity = (
-                f"{resolved_search_name(selected)}|"
+                f"{'|'.join(search_names)}|"
                 f"{selected.source.set_code or ''}|"
                 f"{selected.source.collector_number or ''}"
             )
@@ -2648,15 +2733,24 @@ def render_review_panel() -> None:
                 with MpcFillClient(mpc_cache_dir()) as client:
                     if cache_key not in cache:
                         with st.spinner("Buscando diseños MPCFill..."):
-                            cache[cache_key] = client.search_designs(
-                                resolved_search_name(selected),
-                                languages=languages,
-                                minimum_dpi=minimum_dpi,
-                                max_results=visible_limit,
-                                preferred_sources=DEFAULT_PREFERRED_SOURCES,
-                                fuzzy_search=True,
+                            cache[cache_key], used_search_name = (
+                                search_mpcfill_with_aliases(
+                                    client,
+                                    selected,
+                                    languages=languages,
+                                    minimum_dpi=minimum_dpi,
+                                    max_results=visible_limit,
+                                    preferred_sources=DEFAULT_PREFERRED_SOURCES,
+                                    fuzzy_search=True,
+                                )
                             )
+                            st.session_state.setdefault(
+                                "mpc_search_name_used", {}
+                            )[cache_key] = used_search_name
                     designs = cache.get(cache_key, [])
+                    used_search_name = st.session_state.get(
+                        "mpc_search_name_used", {}
+                    ).get(cache_key, search_name)
                     if selected.source.set_code:
                         designs = sorted(
                             designs,
@@ -2672,9 +2766,14 @@ def render_review_panel() -> None:
                         )
                     if not designs:
                         st.info(
-                            "MPCFill no encontró diseños con esos filtros."
+                            "MPCFill no encontró diseños con esos filtros "
+                            f"probando: {', '.join(search_names)}."
                         )
-                    elif selected.source.set_code:
+                    else:
+                        st.caption(
+                            f"MPCFill buscó como: **{used_search_name}**."
+                        )
+                    if designs and selected.source.set_code:
                         st.caption(
                             "Se muestran primero los diseños cuyo nombre o "
                             "archivo parece incluir el set code "

@@ -148,3 +148,41 @@ def test_two_shared_names_resolve_to_different_scryfall_printings() -> None:
     assert studious.selected_set == "sos"
     assert rampant.selected_set == "tdc"
     assert studious.faces[0].url != rampant.faces[0].url
+
+
+
+class FangornPrintingClient(ScryfallClient):
+    def __init__(self) -> None:
+        super().__init__(Path("/tmp/proxy-maker-fangorn-printing-test"))
+
+    def _get_card_by_printing(self, set_code, collector_number, language):
+        assert set_code.casefold() == "ltc"
+        assert collector_number == "377"
+        assert language is None
+        return {
+            "name": "Yavimaya, Cradle of Growth",
+            "flavor_name": "Fangorn Forest",
+            "set": "ltc",
+            "collector_number": "377",
+        }
+
+
+def test_fangorn_forest_exposes_oracle_and_reskin_search_names() -> None:
+    client = FangornPrintingClient()
+    try:
+        names = client.search_names_for_printing(
+            DeckCard(
+                1,
+                "Fangorn Forest",
+                set_code="LTC",
+                collector_number="377",
+            )
+        )
+    finally:
+        client.close()
+
+    assert names == (
+        "Yavimaya, Cradle of Growth",
+        "Fangorn Forest",
+    )
+    assert names[0] == "Yavimaya, Cradle of Growth"

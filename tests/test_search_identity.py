@@ -88,3 +88,25 @@ def test_mpcfill_preserved_canonical_name_is_reused() -> None:
         },
     )
     assert resolved_search_name(card) == "Cavern of Souls"
+
+
+
+def test_fangorn_scryfall_metadata_uses_yavimaya_for_search() -> None:
+    card = ResolvedCard(
+        source=DeckCard(
+            1,
+            "Fangorn Forest",
+            set_code="ltc",
+            collector_number="377",
+        ),
+        status="Misma impresión en inglés",
+        provider="scryfall",
+        selected_set="ltc",
+        collector_number="377",
+        scryfall_data={
+            "name": "Yavimaya, Cradle of Growth",
+            "flavor_name": "Fangorn Forest",
+        },
+    )
+
+    assert resolved_search_name(card) == "Yavimaya, Cradle of Growth"

@@ -596,8 +596,15 @@ class ScryfallClient:
         path.write_bytes(data)
         return data
 
-    def canonical_name_for_printing(self, card: DeckCard) -> str:
-        """Resolve reskin/display names through an exact Scryfall printing."""
+    def search_names_for_printing(self, card: DeckCard) -> tuple[str, ...]:
+        """Return canonical and display names for an exact printing.
+
+        Scryfall keeps reskins such as Fangorn Forest under their Oracle
+        card name (Yavimaya, Cradle of Growth) and exposes the alternate
+        display name separately.  Searching both names makes external art
+        providers work without maintaining a hard-coded alias table.
+        """
+        candidates: list[str] = []
         if card.set_code and card.collector_number:
             candidate = self._get_card_by_printing(
                 card.set_code,
@@ -605,10 +612,30 @@ class ScryfallClient:
                 language=None,
             )
             if isinstance(candidate, dict):
-                name = candidate.get("name")
-                if isinstance(name, str) and name.strip():
-                    return canonical_card_name(name)
-        return canonical_card_name(card.name)
+                for key in (
+                    "oracle_name",
+                    "name",
+                    "flavor_name",
+                    "printed_name",
+                ):
+                    value = candidate.get(key)
+                    if isinstance(value, str) and value.strip():
+                        candidates.append(canonical_card_name(value))
+
+        candidates.append(canonical_card_name(card.name))
+        unique: list[str] = []
+        seen: set[str] = set()
+        for name in candidates:
+            identity = name.casefold()
+            if not name or identity in seen:
+                continue
+            seen.add(identity)
+            unique.append(name)
+        return tuple(unique)
+
+    def canonical_name_for_printing(self, card: DeckCard) -> str:
+        """Resolve reskin/display names through an exact Scryfall printing."""
+        return self.search_names_for_printing(card)[0]
 
     def _get_card_by_printing(
         self, set_code: str, collector_number: str, language: str | None

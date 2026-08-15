@@ -327,7 +327,7 @@ def test_mpcfill_analysis_is_batched_per_deck() -> None:
 
 def test_analysis_engine_version_invalidates_stale_results() -> None:
     app = app_text()
-    assert 'ANALYSIS_ENGINE_VERSION = "workflow-v5.4.4-printing-identity"' in app
+    assert 'ANALYSIS_ENGINE_VERSION = "workflow-v5.4.5-reskin-search"' in app
     assert "analysis_signature_for_config(" in app
     assert "engine_version=ANALYSIS_ENGINE_VERSION" in app
 
@@ -426,7 +426,7 @@ def test_multiple_decks_fill_pages_continuously() -> None:
 
 def test_build_version_identifies_multideck_download() -> None:
     app = app_text()
-    assert 'BUILD_VERSION = "2026.08.13-workflow-v5.4.4-printing-identity-hotfix"' in app
+    assert 'BUILD_VERSION = "2026.08.15-workflow-v5.4.5-reskin-search-hotfix"' in app
     assert '"➕"' in app
 
 
@@ -478,7 +478,7 @@ def test_version_caches_include_full_dual_card_identity() -> None:
     assert "selected.source.set_code or ''" in app
     assert "selected.source.collector_number or ''" in app
     assert "client.search_designs(" in app
-    assert "resolved_search_name(selected)," in app
+    assert "search_mpcfill_with_aliases(" in app
 
 
 
@@ -628,10 +628,12 @@ def test_deck_selector_migrates_legacy_string_state() -> None:
     assert 'key="deck_config_active"' not in app
 
 
-def test_review_searches_use_canonical_resolved_name() -> None:
+def test_review_searches_use_exact_printing_aliases() -> None:
     app = app_text()
-    assert "resolved_search_name(selected)" in app
-    assert "Nombre de búsqueda canónico" in app
+    assert "printing_search_names(selected)" in app
+    assert "search_mpcfill_with_aliases(" in app
+    assert "Nombres de búsqueda:" in app
+    assert "MPCFill buscó como:" in app
     assert "repair_mpcfill_alias_failures(" in app
 
 
@@ -640,3 +642,12 @@ def test_review_selector_shows_requested_printing_identity() -> None:
     assert "cards[index].source.collector_number or '?'" in app
     assert "Unificar duplicados exactos con la primera selección" in app
     assert "source_printing_key(cards[index].source)" in app
+
+
+
+def test_mpcfill_review_tries_all_reskin_aliases() -> None:
+    app = app_text()
+    assert "def printing_search_names(card: ResolvedCard)" in app
+    assert "client.search_names_for_printing(source)" in app
+    assert "for name in names:" in app
+    assert "probando: {', '.join(search_names)}" in app

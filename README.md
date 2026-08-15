@@ -622,3 +622,8 @@ numérico.
 Proxy Maker trata como entradas distintas las cartas con el mismo nombre cuando cambia el código de edición o el número de coleccionista. Esto es especialmente importante para cartas como los nueve **Nazgûl** de LTR: `100`, `332`, `333`, `334`, `335`, `336`, `337`, `338` y `339` se revisan y exportan por separado.
 
 Para cartas con nombre alternativo o reskin, la búsqueda de versiones usa el nombre canónico devuelto por Scryfall. Por ejemplo, una lista que contiene **Paths of the Dead (LTC) 362** conserva ese nombre como entrada del mazo, pero las búsquedas de diseños se realizan como **Cavern of Souls**.
+
+
+### Nombres alternativos y reskins
+
+Cuando una impresión usa un nombre temático distinto de su carta Oracle, Proxy Maker consulta la impresión exacta mediante edición y número de coleccionista. A partir de ahí busca tanto por el nombre Oracle como por el nombre temático. Esto cubre casos como `Paths of the Dead` / `Cavern of Souls` y `Fangorn Forest` / `Yavimaya, Cradle of Growth`.

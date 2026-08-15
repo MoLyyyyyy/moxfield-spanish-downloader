@@ -1,5 +1,5 @@
 Proxy Maker
-Build: 2026.08.13-workflow-v5.4.4-printing-identity-hotfix
+Build: 2026.08.15-workflow-v5.4.5-reskin-search-hotfix
 Fecha: 2026-07-28
 
 Incluye todas las correcciones anteriores y estas mejoras de flujo:
@@ -80,3 +80,10 @@ Hotfix v5.4.4:
 - Búsqueda por nombre canónico de Scryfall para reskins como Paths of the Dead / Cavern of Souls.
 - Reintento automático de MPCFill por nombre canónico cuando la búsqueda del nombre impreso falla.
 - ANALYSIS_ENGINE_VERSION = workflow-v5.4.4-printing-identity.
+
+
+Hotfix v5.4.5:
+- Resuelve automáticamente aliases/reskins desde Scryfall mediante set + collector.
+- Fangorn Forest (LTC 377) busca primero como Yavimaya, Cradle of Growth y también prueba Fangorn Forest.
+- MPCFill prueba todos los nombres conocidos de la impresión antes de declarar que no hay diseños.
+- El selector de revisión muestra qué nombre produjo los resultados.
