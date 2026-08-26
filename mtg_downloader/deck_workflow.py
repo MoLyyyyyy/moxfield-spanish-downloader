@@ -11,11 +11,21 @@ DEFAULT_DECK_SETTINGS: dict[str, Any] = {
     "preferred_language": "es",
     "allow_language_fallback": True,
     "resolution_mode": "exact_first",
-    "quality_mode": "prefer_highres",
+    "quality_mode": "highres_only",
     "image_quality": "png",
     "include_sideboard": False,
     "include_maybeboard": False,
 }
+
+AUTOMATIC_MPCFILL_MINIMUM_DPI = 800
+
+
+def bulk_scryfall_settings(action: str) -> tuple[bool, str, str]:
+    return {
+        "Español y después inglés": (True, "flexible", "highres_only"),
+        "Máxima calidad disponible": (True, "flexible", "highres_only"),
+        "Respetar impresión exacta": (True, "exact_only", "highres_only"),
+    }[action]
 
 
 def normalise_deck_config(
@@ -46,12 +56,7 @@ def normalise_deck_config(
         else "exact_first"
     )
 
-    quality = str(config.get("quality_mode", "prefer_highres"))
-    config["quality_mode"] = (
-        quality
-        if quality in {"prefer_highres", "allow_lowres", "highres_only"}
-        else "prefer_highres"
-    )
+    config["quality_mode"] = "highres_only"
 
     image_quality = str(config.get("image_quality", "png"))
     config["image_quality"] = (
@@ -60,8 +65,8 @@ def normalise_deck_config(
 
     config["decklist"] = str(config.get("decklist", ""))
     config["deck_name"] = str(config.get("deck_name", "")).strip()
-    config["allow_language_fallback"] = bool(
-        config.get("allow_language_fallback", True)
+    config["allow_language_fallback"] = (
+        config["preferred_language"] == "es"
     )
     config["include_sideboard"] = bool(
         config.get("include_sideboard", False)
