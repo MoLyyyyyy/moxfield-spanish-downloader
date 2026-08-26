@@ -12,7 +12,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from mtg_downloader.archive import build_zip, cache_stats
+from mtg_downloader.archive import cache_stats
 from mtg_downloader.backs import standard_magic_back
 from mtg_downloader.card_names import canonical_card_name
 from mtg_downloader.deck_view import (
@@ -25,6 +25,8 @@ from mtg_downloader.filenames import multi_deck_pdf_filename
 from mtg_downloader.image_processing import CROP_AUTO, CROP_FORCE, CROP_NONE
 from mtg_downloader.models import CardVariant, DeckCard, ImageFace, ResolvedCard
 from mtg_downloader.deck_workflow import (
+    AUTOMATIC_MPCFILL_MINIMUM_DPI,
+    bulk_scryfall_settings,
     deck_configs_from_analysis_config,
     deck_position_for_card,
     deck_settings_label,
@@ -57,14 +59,10 @@ from mtg_downloader.pdf_split import (
 from mtg_downloader.print_layout import calculate_sheet_usage
 from mtg_downloader.preflight import (
     build_preflight_issues,
-    estimate_pdf_size_bytes,
     issue_rows,
 )
 from mtg_downloader.print_map import (
-    build_print_map,
     preferred_page_pair_breaks,
-    print_map_csv,
-    print_map_pdf,
 )
 from mtg_downloader.project_io import (
     ProjectFileError,
@@ -108,8 +106,8 @@ st.set_page_config(
 
 st.title("🃏 Proxy Maker")
 
-ANALYSIS_ENGINE_VERSION = "workflow-v5.4.5-reskin-search"
-BUILD_VERSION = "2026.08.15-workflow-v5.4.5-reskin-search-hotfix"
+ANALYSIS_ENGINE_VERSION = "workflow-v5.5-highres-simple-export"
+BUILD_VERSION = "2026.08.26-workflow-v5.5-highres-simple-export"
 SCRYFALL_ALTERNATIVE_ORDER_VERSION = "configurable-v2"
 
 
@@ -376,12 +374,6 @@ para que el siguiente mazo rellene los huecos del anterior.
         "Usar únicamente la edición indicada": "exact_only",
         "Buscar en cualquier edición": "flexible",
     }
-    quality_labels = {
-        "Preferir alta resolución": "prefer_highres",
-        "Aceptar imágenes lowres": "allow_lowres",
-        "Usar solo alta resolución": "highres_only",
-    }
-
     def sync_deck_draft_from_widgets(
         configs: list[dict[str, Any]],
         position: int,
@@ -394,7 +386,6 @@ para que el siguiente mazo rellene los huecos del anterior.
         simple_keys = {
             f"decklist_input_{position}": "decklist",
             f"deck_name_{position}": "deck_name",
-            f"deck_fallback_{position}": "allow_language_fallback",
             f"deck_sideboard_{position}": "include_sideboard",
             f"deck_maybeboard_{position}": "include_maybeboard",
         }
@@ -417,11 +408,6 @@ para que el siguiente mazo rellene los huecos del anterior.
                 f"deck_resolution_{position}",
                 "resolution_mode",
                 resolution_labels,
-            ),
-            (
-                f"deck_quality_{position}",
-                "quality_mode",
-                quality_labels,
             ),
         )
         for widget_key, config_key, choices in mapped_keys:
@@ -609,30 +595,13 @@ para que el siguiente mazo rellene los huecos del anterior.
         )
         resolution_mode = resolution_labels[resolution_label]
 
-        quality_value = base["quality_mode"]
-        quality_label = st.selectbox(
-            "Calidad",
-            options=list(quality_labels),
-            index=list(quality_labels.values()).index(quality_value),
-            key=f"deck_quality_{deck_position}",
-        )
-        quality_mode = quality_labels[quality_label]
+        quality_mode = "highres_only"
+        allow_language_fallback = preferred_language == "es"
 
         with st.expander(
             f"Opciones avanzadas del mazo {deck_position + 1}",
             expanded=False,
         ):
-            fallback_language = (
-                "inglés"
-                if preferred_language == "es"
-                else "español"
-            )
-            allow_language_fallback = st.checkbox(
-                f"Usar {fallback_language} como respaldo",
-                value=base["allow_language_fallback"],
-                key=f"deck_fallback_{deck_position}",
-            )
-
             image_quality_label = st.selectbox(
                 "Formato de imagen",
                 [
@@ -666,7 +635,8 @@ para que el siguiente mazo rellene los huecos del anterior.
         st.info(
             "Este mazo se analizará con: "
             f"{'MPCFill' if preferred_image_source == 'mpcfill' else 'Scryfall'} "
-            f"· {'español' if preferred_language == 'es' else 'inglés'}."
+            f"· {'español con respaldo en inglés' if preferred_language == 'es' else 'inglés'} "
+            "· solo alta resolución."
         )
 
     deck_configs[deck_position] = normalise_deck_config(
@@ -1271,15 +1241,11 @@ def apply_bulk_action(indices: list[int], action: str) -> None:
 
     try:
         if action in {
-            "Solo español y alta calidad",
+            "Español y después inglés",
             "Máxima calidad disponible",
             "Respetar impresión exacta",
         }:
-            settings = {
-                "Solo español y alta calidad": (False, "flexible", "prefer_highres"),
-                "Máxima calidad disponible": (True, "flexible", "highres_only"),
-                "Respetar impresión exacta": (True, "exact_only", "allow_lowres"),
-            }[action]
+            settings = bulk_scryfall_settings(action)
             with ScryfallClient(
                 cache_dir(),
                 image_quality=image_quality_for_card_index(indices[0]),
@@ -1303,7 +1269,7 @@ def apply_bulk_action(indices: list[int], action: str) -> None:
                     designs, used_name = search_mpcfill_with_aliases(
                         client,
                         cards[index],
-                        minimum_dpi=300,
+                        minimum_dpi=AUTOMATIC_MPCFILL_MINIMUM_DPI,
                         max_results=1,
                     )
                     if designs:
@@ -1852,7 +1818,7 @@ def render_bulk_panel(filtered: list[int]) -> None:
         action = st.selectbox(
             "Acción",
             [
-                "Solo español y alta calidad",
+                "Español y después inglés",
                 "Máxima calidad disponible",
                 "Respetar impresión exacta",
                 "Primer diseño MPCFill de mayor DPI",
@@ -2935,7 +2901,7 @@ def render_deck_review_navigation(
 
         with st.expander("Reanalizar o cambiar ajustes de este mazo", expanded=False):
             current_config = deck_config_for_position(position)
-            setting_columns = st.columns(3)
+            setting_columns = st.columns(2)
             with setting_columns[0]:
                 reanalysis_source = st.selectbox(
                     "Fuente",
@@ -2976,28 +2942,6 @@ def render_deck_review_navigation(
                     }[value],
                     key=f"reanalysis_resolution_{position}",
                 )
-                quality_values = [
-                    "prefer_highres",
-                    "allow_lowres",
-                    "highres_only",
-                ]
-                reanalysis_quality = st.selectbox(
-                    "Calidad",
-                    quality_values,
-                    index=quality_values.index(current_config["quality_mode"]),
-                    format_func=lambda value: {
-                        "prefer_highres": "Preferir alta resolución",
-                        "allow_lowres": "Aceptar lowres",
-                        "highres_only": "Solo alta resolución",
-                    }[value],
-                    key=f"reanalysis_quality_{position}",
-                )
-            with setting_columns[2]:
-                reanalysis_fallback = st.checkbox(
-                    "Permitir idioma de respaldo",
-                    value=current_config["allow_language_fallback"],
-                    key=f"reanalysis_fallback_{position}",
-                )
                 reanalysis_image_quality = st.selectbox(
                     "Formato de imagen",
                     ["png", "large"],
@@ -3019,9 +2963,9 @@ def render_deck_review_navigation(
                 **current_config,
                 "preferred_image_source": reanalysis_source,
                 "preferred_language": reanalysis_language,
-                "allow_language_fallback": reanalysis_fallback,
+                "allow_language_fallback": reanalysis_language == "es",
                 "resolution_mode": reanalysis_resolution,
-                "quality_mode": reanalysis_quality,
+                "quality_mode": "highres_only",
                 "image_quality": reanalysis_image_quality,
             }
             reanalysis_columns = st.columns(2)
@@ -3123,7 +3067,7 @@ def render_workspace() -> None:
 
 def render_export_panel() -> None:
     cards: list[ResolvedCard] = st.session_state["resolved_cards"]
-    st.subheader("3. Validar y exportar")
+    st.subheader("3. Generar PDF")
 
     cut_lines = True
     cut_line_style = "ticks"
@@ -3133,12 +3077,10 @@ def render_export_panel() -> None:
     printer_marks = True
     back_spec = standard_magic_back()
     include_backs = True
+    split_large_pdf = True
 
     deck_summaries = list(
         st.session_state.get("deck_summaries") or []
-    )
-    multi_deck_stats = dict(
-        st.session_state.get("multi_deck_stats") or {}
     )
     deck_count = max(len(deck_summaries), 1)
 
@@ -3147,21 +3089,6 @@ def render_export_panel() -> None:
         back_spec=back_spec,
         warn_duplicates=deck_count == 1,
     )
-    metrics = st.columns(6)
-    metrics[0].metric("Copias", validation.expected_cards)
-    metrics[1].metric("Frentes", validation.expected_front_files)
-    metrics[2].metric("Reversos", validation.expected_back_files)
-    metrics[3].metric("Variantes", validation.variants)
-    metrics[4].metric("Sin imagen", len(validation.missing_entries))
-    metrics[5].metric(
-        "DPI mínimo",
-        validation.minimum_known_dpi or "—",
-    )
-
-    for error in validation.errors:
-        st.error(error)
-    for warning in validation.warnings:
-        st.warning(warning)
 
     current_deck_configs = deck_configs_from_analysis_config(
         st.session_state.get("analysis_config") or {}
@@ -3176,45 +3103,28 @@ def render_export_panel() -> None:
         current_deck_configs,
         reviewed_decks,
     )
-    estimated_pdf_size = estimate_pdf_size_bytes(
-        cards,
-        current_deck_configs,
-        deck_summaries,
-        include_backs=include_backs,
-    )
-    preflight_metrics = st.columns(4)
-    preflight_metrics[0].metric(
-        "Errores finales",
-        sum(issue.severity == "Error" for issue in preflight_issues),
-    )
-    preflight_metrics[1].metric(
-        "Avisos finales",
-        sum(issue.severity == "Aviso" for issue in preflight_issues),
-    )
-    preflight_metrics[2].metric(
-        "Mazos revisados",
-        f"{len(reviewed_decks)}/{deck_count}",
-    )
-    preflight_metrics[3].metric(
-        "Tamaño estimado",
-        format_file_size(estimated_pdf_size),
-        help="Estimación aproximada antes de generar y comprimir el PDF.",
-    )
-
-    with st.expander(
-        f"Comprobación final ({len(preflight_issues)} incidencias)",
-        expanded=any(
-            issue.severity == "Error" for issue in preflight_issues
-        ),
-    ):
-        if preflight_issues:
-            st.dataframe(
-                pd.DataFrame(issue_rows(preflight_issues)),
-                width="stretch",
-                hide_index=True,
-            )
+    critical_preflight = [
+        issue for issue in preflight_issues if issue.severity == "Error"
+    ]
+    if validation.errors or critical_preflight:
+        st.error(
+            "Hay cartas que debes corregir antes de generar el PDF. "
+            "Elige una versión de MPCFill o sube tu propia imagen."
+        )
+        with st.expander(
+            "Cartas pendientes",
+            expanded=True,
+        ):
+            for error in validation.errors:
+                st.write(error)
+            if critical_preflight:
+                st.dataframe(
+                    pd.DataFrame(issue_rows(critical_preflight)),
+                    width="stretch",
+                    hide_index=True,
+                )
             actionable = [
-                issue for issue in preflight_issues
+                issue for issue in critical_preflight
                 if issue.card_index is not None
             ]
             for issue_number, issue in enumerate(actionable[:20]):
@@ -3227,87 +3137,8 @@ def render_export_panel() -> None:
                     open_card_editor(int(issue.card_index))
                     st.session_state["app_step"] = 2
                     st.rerun()
-            if len(actionable) > 20:
-                st.caption(
-                    f"Se muestran accesos directos para las primeras 20 de "
-                    f"{len(actionable)} cartas con incidencias."
-                )
-        else:
-            st.success("La comprobación final no ha detectado incidencias.")
-
-    if deck_count > 1:
-        st.info(
-            f"{deck_count} mazos se imprimirán uno detrás de otro, "
-            "sin saltos de hoja entre ellos."
-        )
-        with st.expander("Mazos incluidos y orden de impresión", expanded=False):
-            for summary in deck_summaries:
-                st.write(
-                    f"**{summary['index']}. {summary['name']}** — "
-                    f"{summary['copies']} cartas · "
-                    f"{deck_settings_label(summary.get('settings', {}))} · "
-                    f"{summary['sheet_count']} hojas por separado"
-                )
-
-        saved_sheets = int(multi_deck_stats.get("saved_sheets", 0))
-        saved_slots = int(multi_deck_stats.get("saved_paid_slots", 0))
-        if saved_sheets:
-            st.success(
-                f"Al combinarlos se "
-                f"{'ahorra' if saved_sheets == 1 else 'ahorran'} "
-                f"{saved_sheets} "
-                f"{'hoja' if saved_sheets == 1 else 'hojas'} "
-                f"({saved_slots} posiciones pagadas) frente a generar "
-                "un PDF independiente para cada mazo."
-            )
-        else:
-            st.caption(
-                "En esta combinación no se reduce el número total de hojas, "
-                "pero tampoco se añaden huecos entre mazos."
-            )
-
-    print_map_rows = build_print_map(deck_summaries)
-    if print_map_rows:
-        with st.expander("Mapa de posiciones de los mazos", expanded=False):
-            st.dataframe(
-                pd.DataFrame(
-                    [
-                        {
-                            "#": row.index,
-                            "Mazo": row.name,
-                            "Cartas": row.cards,
-                            "Comienza": row.start_label,
-                            "Termina": row.end_label,
-                        }
-                        for row in print_map_rows
-                    ]
-                ),
-                width="stretch",
-                hide_index=True,
-            )
-            map_columns = st.columns(2)
-            with map_columns[0]:
-                st.download_button(
-                    "Descargar mapa CSV",
-                    data=print_map_csv(print_map_rows),
-                    file_name="mapa-posiciones-mazos.csv",
-                    mime="text/csv",
-                    width="stretch",
-                    on_click="ignore",
-                )
-            with map_columns[1]:
-                st.download_button(
-                    "Descargar mapa PDF",
-                    data=print_map_pdf(print_map_rows),
-                    file_name="mapa-posiciones-mazos.pdf",
-                    mime="application/pdf",
-                    width="stretch",
-                    on_click="ignore",
-                )
-            st.caption(
-                "Las posiciones se cuentan de izquierda a derecha y de "
-                "arriba abajo en cada hoja 3×3."
-            )
+    else:
+        st.success("Todo listo para generar el PDF.")
 
     sheet_usage = calculate_sheet_usage(validation.expected_cards)
     if sheet_usage.is_full:
@@ -3332,100 +3163,7 @@ def render_export_panel() -> None:
             "nunca se intercalan entre las cartas."
         )
 
-    with st.expander("Detalles de validación", expanded=False):
-        if validation.missing_entries:
-            st.write("**Sin imagen:** " + ", ".join(validation.missing_entries))
-        if validation.lowres_entries:
-            st.write("**Baja resolución:** " + ", ".join(validation.lowres_entries))
-        if validation.bleed_retained:
-            st.write("**Sangrado conservado:** " + ", ".join(validation.bleed_retained))
-        if validation.duplicate_entries:
-            st.write("**Entradas duplicadas:** " + ", ".join(validation.duplicate_entries))
-        if not any(
-            [
-                validation.missing_entries,
-                validation.lowres_entries,
-                validation.bleed_retained,
-                validation.duplicate_entries,
-            ]
-        ):
-            st.success("No se han detectado incidencias.")
-
-    critical_preflight = [
-        issue for issue in preflight_issues if issue.severity == "Error"
-    ]
-    override_errors = False
-    if validation.errors or critical_preflight:
-        override_errors = st.checkbox(
-            "Generar aunque existan errores de preimpresión",
-            help=(
-                "Puede producir cartas sin imagen, impresiones incorrectas "
-                "o cartas dobles incompletas."
-            ),
-        )
-    generation_disabled = bool(
-        validation.errors or critical_preflight
-    ) and not override_errors
-
-    st.info(
-        "PDF A4 3×3 con cartas de 63,5 × 88,9 mm, "
-        "sangrado espejo de 1 mm, páginas 1/1B y marcas de imprenta."
-    )
-    with st.expander("Ajustes del PDF", expanded=False):
-        cut_lines = st.checkbox(
-            "Añadir marcas de corte",
-            value=True,
-            key="pdf_cut_lines",
-        )
-        style_label = st.selectbox(
-            "Tipo de líneas de corte",
-            [
-                "Marcas cortas en los márgenes — recomendado",
-                "Líneas completas para corte manual",
-            ],
-            key="pdf_cut_style_label",
-        )
-        cut_line_style = (
-            "ticks"
-            if style_label.startswith("Marcas cortas")
-            else "full"
-        )
-        cut_line_width = st.number_input(
-            "Grosor de las líneas (pt)",
-            min_value=0.1,
-            max_value=10.0,
-            value=1.0,
-            step=0.1,
-            key="pdf_cut_line_width",
-        )
-        cut_line_color = st.color_picker(
-            "Color de las líneas",
-            value="#000000",
-            key="pdf_cut_line_color",
-        )
-        st.caption(
-            "Las marcas de registro y la barra CMYK originales de "
-            "MPCFillToPDF se incluyen siempre."
-        )
-        cut_line_over_cards = st.checkbox(
-            "Dibujar las líneas por encima de las cartas",
-            value=False,
-            help=(
-                "Déjalo desactivado para el comportamiento estándar "
-                "de imprenta de MPCFillToPDF."
-            ),
-            key="pdf_cut_over_cards",
-        )
-        split_large_pdf = st.checkbox(
-            "Dividir automáticamente si supera 200 MB",
-            value=True,
-            help=(
-                "Crea varios PDFs manteniendo juntas las parejas de "
-                "páginas 1/1B, 2/2B, etc. Cuando un mazo termina justo "
-                "al final de una hoja, se prioriza ese punto de corte."
-            ),
-            key="pdf_split_large",
-        )
+    generation_disabled = bool(validation.errors or critical_preflight)
 
     pdf_file_name = multi_deck_pdf_filename(
         [summary["name"] for summary in deck_summaries],
@@ -3638,101 +3376,6 @@ def render_export_panel() -> None:
                 "Se ha mantenido unida para no separar el frente de su "
                 "reverso."
             )
-
-
-    images_requested = False
-    mpc_requested = False
-    naming_mode = "Por categoría"
-    with st.expander("Otros formatos", expanded=False):
-        naming_mode = st.selectbox(
-            "Organización de nombres",
-            ["Por categoría", "Por posición del mazo"],
-        )
-        other_columns = st.columns(2)
-        with other_columns[0]:
-            images_requested = st.button(
-                "Generar ZIP de imágenes",
-                width="stretch",
-                disabled=generation_disabled,
-            )
-        with other_columns[1]:
-            mpc_requested = st.button(
-                "Generar paquete MPC / dúplex",
-                width="stretch",
-                disabled=generation_disabled,
-            )
-
-    requested_format: str | None = None
-    if images_requested:
-        requested_format = "images"
-    elif mpc_requested:
-        requested_format = "mpc"
-
-    if requested_format:
-        progress = st.progress(0.0)
-        status = st.empty()
-        try:
-            with ScryfallClient(
-                cache_dir(),
-                image_quality=deck_config_for_position(0)[
-                    "image_quality"
-                ],
-            ) as client:
-                data, report = build_zip(
-                    cards,
-                    client,
-                    duplicate_copies=True,
-                    progress_callback=lambda current, total, name: (
-                        status.write(
-                            f"Añadiendo {current}/{total}: **{name}**"
-                        ),
-                        progress.progress(current / max(total, 1)),
-                    ),
-                    back_spec=back_spec,
-                    include_backs=include_backs,
-                    naming_mode=(
-                        "category"
-                        if naming_mode == "Por categoría"
-                        else "sequence"
-                    ),
-                    package_mode=requested_format,
-                )
-                name = (
-                    "mazo_paquete_mpc.zip"
-                    if requested_format == "mpc"
-                    else "mazo_cartas.zip"
-                )
-                mime = "application/zip"
-                progress.progress(1.0)
-                status.success("Paquete preparado correctamente.")
-
-            st.session_state["output_data"] = data
-            st.session_state["output_name"] = name
-            st.session_state["output_mime"] = mime
-            st.session_state["report"] = report
-        except (ScryfallError, OSError, ValueError) as exc:
-            status.error(str(exc))
-
-
-    if st.session_state.get("output_data") is not None:
-        st.download_button(
-            "Descargar ZIP preparado",
-            data=st.session_state["output_data"],
-            file_name=st.session_state["output_name"],
-            mime=st.session_state["output_mime"],
-            type="primary",
-            width="stretch",
-        )
-        report = st.session_state.get("report") or []
-        if report:
-            with st.expander("Informe final", expanded=False):
-                st.dataframe(
-                    pd.DataFrame(report),
-                    width="stretch",
-                    hide_index=True,
-                )
-
-
 if app_step == 2 and signature_matches:
     render_deck_review_navigation(
         location="top",
