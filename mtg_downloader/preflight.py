@@ -42,6 +42,7 @@ def build_preflight_issues(
         config = deck_configs[deck_position] if deck_position < len(deck_configs) else {}
         preferred_language = str(config.get("preferred_language") or "")
         resolution_mode = str(config.get("resolution_mode") or "exact_first")
+        quality_mode = str(config.get("quality_mode") or "highres_only")
         start = int(summary.get("start_index") or 0)
         end = int(summary.get("end_index") or start)
         for index in range(start, min(end, len(cards))):
@@ -67,7 +68,7 @@ def build_preflight_issues(
             ):
                 issues.append(
                     _card_issue(
-                        "Aviso",
+                        "Error" if quality_mode == "highres_only" else "Aviso",
                         deck_position,
                         index,
                         deck_name,

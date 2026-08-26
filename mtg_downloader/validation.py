@@ -97,7 +97,7 @@ def validate_deck(
     if missing:
         errors.append(f"Faltan imágenes en {len(set(missing))} entradas.")
     if lowres:
-        warnings.append(f"Hay {len(set(lowres))} entradas de baja resolución.")
+        errors.append(f"Hay {len(set(lowres))} entradas de baja resolución.")
     if bleed:
         warnings.append(f"Hay {len(set(bleed))} entradas MPCFill con un recorte no automático.")
     if duplicates and warn_duplicates:
