@@ -2,6 +2,7 @@ import io
 from pathlib import Path
 
 from PIL import Image
+from pypdf import PdfReader
 
 from mtg_downloader.backs import neutral_back
 from mtg_downloader.models import DeckCard, ImageFace, ResolvedCard
@@ -54,6 +55,73 @@ def test_pdf_contains_interleaved_front_and_back_pages() -> None:
     assert result.pages == 4
     assert result.back_pages == 2
     assert result.page_pairs == 2
+
+
+def test_standard_backs_show_the_deck_code_but_fronts_do_not() -> None:
+    cards = [
+        ResolvedCard(
+            source=DeckCard(2, "Forest"),
+            status="ok",
+            faces=[ImageFace("Forest", "fake", ".png")],
+        ),
+        ResolvedCard(
+            source=DeckCard(1, "Island"),
+            status="ok",
+            faces=[ImageFace("Island", "fake", ".png")],
+        ),
+    ]
+
+    result = build_a4_pdf(
+        cards,
+        FakeClient(),
+        back_spec=neutral_back(),
+        include_backs=True,
+        deck_codes=["ATR", "BRE"],
+        printer_marks=False,
+    )
+    pages = PdfReader(io.BytesIO(result.data)).pages
+
+    assert "ATR" not in (pages[0].extract_text() or "")
+    assert "BRE" not in (pages[0].extract_text() or "")
+    assert "ATR" in (pages[1].extract_text() or "")
+    assert "BRE" in (pages[1].extract_text() or "")
+    positions: list[tuple[str, float]] = []
+
+    def collect_position(text, _cm, tm, _font, _size) -> None:
+        value = text.strip()
+        if value in {"ATR", "BRE"}:
+            positions.append((value, float(tm[4])))
+
+    pages[1].extract_text(visitor_text=collect_position)
+    atr_positions = [x for code, x in positions if code == "ATR"]
+    bre_positions = [x for code, x in positions if code == "BRE"]
+
+    assert len(atr_positions) == 2
+    assert len(bre_positions) == 1
+    assert bre_positions[0] < min(atr_positions)
+
+
+def test_double_faced_card_does_not_cover_its_playable_back_with_a_code() -> None:
+    card = ResolvedCard(
+        source=DeckCard(1, "Delver of Secrets"),
+        status="ok",
+        faces=[
+            ImageFace("Delver", "front", ".png"),
+            ImageFace("Insectile Aberration", "back", ".png"),
+        ],
+    )
+
+    result = build_a4_pdf(
+        [card],
+        FakeClient(),
+        back_spec=neutral_back(),
+        include_backs=True,
+        deck_codes=["DEL"],
+        printer_marks=False,
+    )
+    back_text = PdfReader(io.BytesIO(result.data)).pages[1].extract_text() or ""
+
+    assert "DEL" not in back_text
 
 
 def test_mpcfilltopdf_layout_measurements() -> None:

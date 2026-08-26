@@ -16,7 +16,6 @@ def test_app_has_project_file_uploader() -> None:
 def test_app_has_visual_deck_and_editor() -> None:
     app = app_text()
     assert "Analizar mazo" in app
-    assert "Vista del mazo" in app
     assert "Editar versiones" in app
     assert "Cambiar versión" in app
     assert "Mantener actual y continuar" in app
@@ -58,8 +57,6 @@ def test_mpcfill_crop_comparator_exists() -> None:
     assert "Desplazamiento vertical del recorte" in app
     assert "Guardar ajuste de recorte" in app
     assert "Original" in app and "Resultado automático" in app
-    assert "Los diseños MPCFill se recortan " in app
-    assert '"automáticamente."' in app
     assert "Modo de recorte" not in app
 
 
@@ -89,7 +86,18 @@ def test_gallery_filters_and_statuses_exist() -> None:
     assert "Baja resolución" in app
     assert "Preparar todas las imágenes ahora" not in app
     assert "Al terminar aparecerá el botón de descarga" in app
-    assert "cache_stats(" in app
+    assert 'with st.expander("Más opciones", expanded=False):' in app
+
+
+def test_step_two_focuses_on_pending_cards_and_hides_internal_metrics() -> None:
+    app = app_text()
+
+    assert 'st.metric("Pendientes", problem_count)' in app
+    assert 'f"Ver las {len(healthy_indices)} cartas correctas"' in app
+    assert 'st.radio(\n        "Modo de trabajo"' not in app
+    assert 'metrics[4].metric("Caché"' not in app
+    assert "consultas con resultados" not in app
+    assert "Volver al paso 1 para cambiar ajustes" in app
 
 
 def test_validation_and_simplified_export_actions_exist() -> None:
@@ -146,11 +154,11 @@ def test_problematic_cards_are_grouped_first_in_gallery() -> None:
     app = app_text()
     assert "def render_gallery_grouped_section(" in app
     assert "⚠️ Cartas con problemas" in app
-    assert "Ver {len(healthy_indices)} cartas correctas" in app
+    assert "Ver las {len(healthy_indices)} cartas correctas" in app
     assert "problematic_indices = [" in app
     assert "healthy_indices = [" in app
     assert "Estas cartas necesitan revisión" in app
-    assert "Ver {len(healthy_indices)} cartas correctas" in app
+    assert "Ver las {len(healthy_indices)} cartas correctas" in app
 
 
 
@@ -279,9 +287,9 @@ def test_step_one_keeps_advanced_options_per_deck() -> None:
 
 def test_healthy_cards_are_collapsed() -> None:
     app = app_text()
-    assert 'f"Ver {len(healthy_indices)} cartas correctas de este mazo"' in app
+    assert 'f"Ver las {len(healthy_indices)} cartas correctas"' in app
     assert 'expanded=False' in app
-    assert 'st.success("Este mazo no tiene cartas con problemas.")' in app
+    assert 'st.success("Mazo listo.")' in app
 
 
 
@@ -320,7 +328,7 @@ def test_mpcfill_analysis_is_batched_per_deck() -> None:
 
 def test_analysis_engine_version_invalidates_stale_results() -> None:
     app = app_text()
-    assert 'ANALYSIS_ENGINE_VERSION = "workflow-v5.5-highres-simple-export"' in app
+    assert 'ANALYSIS_ENGINE_VERSION = "workflow-v5.6-deck-codes-simple-review"' in app
     assert "analysis_signature_for_config(" in app
     assert "engine_version=ANALYSIS_ENGINE_VERSION" in app
 
@@ -418,7 +426,7 @@ def test_multiple_decks_fill_pages_continuously() -> None:
 
 def test_build_version_identifies_multideck_download() -> None:
     app = app_text()
-    assert 'BUILD_VERSION = "2026.08.26-workflow-v5.5-highres-simple-export"' in app
+    assert 'BUILD_VERSION = "2026.08.26-workflow-v5.6-deck-codes-simple-review"' in app
     assert '"➕"' in app
 
 
@@ -432,7 +440,6 @@ def test_review_and_bulk_actions_are_scoped_to_active_deck() -> None:
     assert "review_indices = (" in app
     assert "problem_indices if only_problematic else deck_indices" in app
     assert 'key=f"bulk_selected_indices_{deck_position}"' in app
-    assert "La acción solo afecta al mazo activo" in app
 
 
 def test_deck_by_deck_navigation_exists() -> None:
@@ -487,8 +494,8 @@ def test_scryfall_versions_are_explicitly_newest_first() -> None:
 def test_workflow_v5_features_are_visible() -> None:
     app = app_text()
     assert '"Nombre del mazo (opcional)"' in app
-    assert '"Reintentar solo pendientes"' in app
-    assert '"Aplicar ajustes y reanalizar el mazo"' in app
+    assert '"Reintentar pendientes"' in app
+    assert '"Volver al paso 1 para cambiar ajustes"' in app
     assert '"Cartas pendientes"' in app
     assert '"Mapa de posiciones de los mazos"' not in app
     assert '"Descargar mapa CSV"' not in app
@@ -509,16 +516,14 @@ def test_scryfall_selector_has_detailed_filters() -> None:
     assert "max_results=175" in app
 
 
-def test_single_deck_reanalysis_updates_only_its_configuration() -> None:
+def test_step_two_retry_preserves_manual_choices_and_stays_scoped() -> None:
     app = app_text()
-    assert '"Reanalizar o cambiar ajustes de este mazo"' in app
-    assert 'key=f"reanalysis_source_{position}"' in app
-    assert 'key=f"reanalysis_language_{position}"' in app
-    assert 'config_override=reanalysis_config' in app
+    assert 'key=f"retry_pending_{position}"' in app
+    assert "only_problematic=True" in app
+    assert "preserve_customised=True" in app
     assert 'updated_decks[deck_position] = config' in app
     assert 'public_deck_settings(config)' in app
     assert 'reviewed.discard(deck_position)' in app
-    assert '"Solo se modifica el mazo activo.' in app
 
 
 

@@ -207,6 +207,7 @@ def build_a4_pdf(
     cut_line_color: str = "#000000",
     cut_line_over_cards: bool = False,
     printer_marks: bool = True,
+    deck_codes: list[str | None] | None = None,
     progress_callback: PdfProgressCallback | None = None,
 ) -> PdfResult:
     """Generate an A4 3x3 duplex PDF compatible with MPCFillToPDF layout.
@@ -219,7 +220,7 @@ def build_a4_pdf(
     if not 0.1 <= float(cut_line_width) <= 10:
         raise ValueError("El grosor de corte debe estar entre 0,1 y 10 pt.")
 
-    cards = physical_cards(resolved_cards)
+    cards = physical_cards(resolved_cards, deck_codes)
     selected_back = back_spec or no_back()
     needs_back_pages = (
         include_backs
@@ -417,6 +418,15 @@ def _draw_page(
                 height=IMAGE_HEIGHT,
             )
 
+        if (
+            backs
+            and card is not None
+            and card.deck_code
+            and len(card.variant.faces) == 1
+            and generic_back is not None
+        ):
+            _draw_deck_code(document, x, y, card.deck_code)
+
         if card is not None:
             tracker.complete_card(backs=backs)
 
@@ -427,6 +437,36 @@ def _draw_page(
             cut_line_style,
             cut_line_width,
         )
+
+
+def _draw_deck_code(
+    document: canvas.Canvas,
+    x: float,
+    y: float,
+    code: str,
+) -> None:
+    """Draw a quiet identifier inside a standard card back."""
+    label = str(code).upper()[:3]
+    width = 14 * mm
+    height = 4 * mm
+    left = x + (CARD_WIDTH - width) / 2
+    bottom = y + 2.2 * mm
+
+    document.saveState()
+    if hasattr(document, "setFillAlpha"):
+        document.setFillAlpha(0.42)
+    document.setFillColorRGB(0.08, 0.08, 0.08)
+    document.roundRect(left, bottom, width, height, 1.2 * mm, fill=1, stroke=0)
+    if hasattr(document, "setFillAlpha"):
+        document.setFillAlpha(0.72)
+    document.setFillColorRGB(0.92, 0.92, 0.92)
+    document.setFont("Helvetica-Bold", 5.5)
+    document.drawCentredString(
+        x + (CARD_WIDTH / 2),
+        bottom + 1.25 * mm,
+        label,
+    )
+    document.restoreState()
 
 
 def _card_image(
