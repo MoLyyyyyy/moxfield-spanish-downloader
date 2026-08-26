@@ -94,44 +94,38 @@ def test_gallery_filters_and_statuses_exist() -> None:
 
 def test_validation_and_simplified_export_actions_exist() -> None:
     app = app_text()
-    assert "Validar y exportar" in app
+    assert "3. Generar PDF" in app
     assert "Generar PDF" in app
     assert "Descargar PDF" in app
-    assert "Otros formatos" in app
-    assert "Generar ZIP de imágenes" in app
-    assert "Generar paquete MPC / dúplex" in app
+    assert "Otros formatos" not in app
+    assert "Generar ZIP de imágenes" not in app
+    assert "Generar paquete MPC / dúplex" not in app
     assert "Formato de salida" not in app
     assert "back_spec = standard_magic_back()" in app
     assert "validate_deck(" in app
 
 
-def test_output_can_be_generated_despite_errors_only_by_override() -> None:
+def test_output_is_blocked_until_errors_are_fixed() -> None:
     app = app_text()
-    assert "Generar aunque existan errores de preimpresión" in app
-    assert "validation.errors or critical_preflight" in app
-    assert ") and not override_errors" in app
+    assert "Generar aunque existan errores de preimpresión" not in app
+    assert "generation_disabled = bool(validation.errors or critical_preflight)" in app
     assert "disabled=generation_disabled" in app
 
 
 
 def test_pdf_matches_mpcfilltopdf_profile() -> None:
     app = app_text()
-    assert "PDF A4 3×3" in app
-    assert "63,5 × 88,9 mm" in app
-    assert "sangrado espejo de 1 mm" in app
-    assert "Marcas cortas en los márgenes" in app
-    assert "Líneas completas para corte manual" in app
-    assert "barra CMYK" in app
-    assert "páginas 1/1B" in app
+    assert 'cut_lines = True' in app
+    assert 'cut_line_style = "ticks"' in app
+    assert 'cut_line_width = 1.0' in app
+    assert 'cut_line_color = "#000000"' in app
+    assert 'include_backs = True' in app
     assert "cut_line_over_cards=cut_line_over_cards" in app
 
 
 
 def test_exact_mpcfilltopdf_assets_are_mandatory() -> None:
     app = app_text()
-    assert "PDF A4 3×3" in app
-    assert "Las marcas de registro y la barra CMYK originales de " in app
-    assert "MPCFillToPDF se incluyen siempre" in app
     assert "printer_marks = True" in app
 
 
@@ -221,7 +215,7 @@ def test_pdf_is_the_primary_export_action() -> None:
     assert '"Generar PDF"' in app
     assert '"Descargar PDF"' in app
     assert 'type="primary"' in app
-    assert 'with st.expander("Otros formatos"' in app
+    assert 'with st.expander("Otros formatos"' not in app
     assert 'export_format = st.selectbox(' not in app
 
 
@@ -277,11 +271,10 @@ def test_alternative_filters_are_inherited_and_collapsed() -> None:
 def test_step_one_keeps_advanced_options_per_deck() -> None:
     app = app_text()
     advanced = app.index('f"Opciones avanzadas del mazo')
-    assert app.index("allow_language_fallback = st.checkbox(", advanced) > advanced
     assert app.index('"Formato de imagen"', advanced) > advanced
     assert app.index('"Incluir sideboard"', advanced) > advanced
     assert app.index('"Incluir maybeboard"', advanced) > advanced
-    assert 'key=f"deck_fallback_{deck_position}"' in app
+    assert 'key=f"deck_fallback_{deck_position}"' not in app
 
 
 def test_healthy_cards_are_collapsed() -> None:
@@ -327,7 +320,7 @@ def test_mpcfill_analysis_is_batched_per_deck() -> None:
 
 def test_analysis_engine_version_invalidates_stale_results() -> None:
     app = app_text()
-    assert 'ANALYSIS_ENGINE_VERSION = "workflow-v5.4.5-reskin-search"' in app
+    assert 'ANALYSIS_ENGINE_VERSION = "workflow-v5.5-highres-simple-export"' in app
     assert "analysis_signature_for_config(" in app
     assert "engine_version=ANALYSIS_ENGINE_VERSION" in app
 
@@ -362,7 +355,7 @@ def test_pdf_generation_replaces_button_with_download() -> None:
     assert 'mime=pdf_download["mime"]' in app
     assert 'on_click="ignore"' in app
     assert 'requested_format = "pdf"' not in app
-    assert '"Descargar ZIP preparado"' in app
+    assert '"Descargar ZIP preparado"' not in app
 
 
 
@@ -375,7 +368,7 @@ def test_app_has_no_deprecated_container_width() -> None:
 
 def test_pdf_can_split_over_200_mb() -> None:
     app = app_text()
-    assert '"Dividir automáticamente si supera 200 MB"' in app
+    assert "split_large_pdf = True" in app
     assert "PDF_SPLIT_LIMIT_BYTES" in app
     assert "split_pdf_if_needed(" in app
     assert "preserve_page_pairs=include_backs" in app
@@ -406,7 +399,8 @@ def test_multiple_deck_inputs_have_independent_settings() -> None:
     assert 'key=f"deck_source_{deck_position}"' in app
     assert 'key=f"deck_language_{deck_position}"' in app
     assert 'key=f"deck_resolution_{deck_position}"' in app
-    assert 'key=f"deck_quality_{deck_position}"' in app
+    assert 'key=f"deck_quality_{deck_position}"' not in app
+    assert 'quality_mode = "highres_only"' in app
     assert '"Analizar mazos"' in app
     assert "parse_deck_configurations(" in app
     assert '"deck_summaries"' in app
@@ -415,9 +409,7 @@ def test_multiple_deck_inputs_have_independent_settings() -> None:
 
 def test_multiple_decks_fill_pages_continuously() -> None:
     app = app_text()
-    assert "sin saltos de hoja entre ellos" in app
     assert "rellena los huecos libres" in app
-    assert "saved_paid_slots" in app
     assert "posiciones pagadas" in app
     assert "warn_duplicates=deck_count == 1" in app
     assert "multi_deck_pdf_filename(" in app
@@ -426,7 +418,7 @@ def test_multiple_decks_fill_pages_continuously() -> None:
 
 def test_build_version_identifies_multideck_download() -> None:
     app = app_text()
-    assert 'BUILD_VERSION = "2026.08.15-workflow-v5.4.5-reskin-search-hotfix"' in app
+    assert 'BUILD_VERSION = "2026.08.26-workflow-v5.5-highres-simple-export"' in app
     assert '"➕"' in app
 
 
@@ -497,13 +489,13 @@ def test_workflow_v5_features_are_visible() -> None:
     assert '"Nombre del mazo (opcional)"' in app
     assert '"Reintentar solo pendientes"' in app
     assert '"Aplicar ajustes y reanalizar el mazo"' in app
-    assert '"Comprobación final (' in app
-    assert '"Mapa de posiciones de los mazos"' in app
-    assert '"Descargar mapa CSV"' in app
-    assert '"Descargar mapa PDF"' in app
+    assert '"Cartas pendientes"' in app
+    assert '"Mapa de posiciones de los mazos"' not in app
+    assert '"Descargar mapa CSV"' not in app
+    assert '"Descargar mapa PDF"' not in app
     assert 'preferred_group_breaks=(' in app
-    assert 'key="pdf_cut_lines"' in app
-    assert 'key="pdf_split_large"' in app
+    assert 'key="pdf_cut_lines"' not in app
+    assert 'key="pdf_split_large"' not in app
 
 
 def test_scryfall_selector_has_detailed_filters() -> None:

@@ -32,6 +32,21 @@ def test_missing_image_blocks_generation() -> None:
     assert not result.can_generate
 
 
+def test_low_resolution_image_blocks_generation() -> None:
+    card = ResolvedCard(
+        source=DeckCard(1, "Lowres"),
+        status="lowres",
+        faces=[ImageFace("Lowres", "https://x/lowres.jpg", ".jpg")],
+        image_status="lowres",
+        highres_image=False,
+    )
+
+    result = validate_deck([card])
+
+    assert not result.can_generate
+    assert result.lowres_entries == ("Lowres",)
+
+
 
 def test_duplicate_warning_can_be_disabled_for_multiple_decks() -> None:
     card_one = ResolvedCard(

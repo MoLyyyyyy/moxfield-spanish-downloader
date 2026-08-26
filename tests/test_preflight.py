@@ -25,6 +25,7 @@ def test_preflight_detects_fallback_set_mismatch_and_unreviewed_deck() -> None:
         {
             "preferred_language": "es",
             "resolution_mode": "exact_only",
+            "quality_mode": "highres_only",
             "image_quality": "png",
         }
     ]
@@ -35,6 +36,11 @@ def test_preflight_detects_fallback_set_mismatch_and_unreviewed_deck() -> None:
     assert "El mazo todavía no se ha marcado como revisado." in descriptions
     assert "Se utilizó el idioma de respaldo." in descriptions
     assert "La versión seleccionada es de baja resolución." in descriptions
+    assert any(
+        issue.severity == "Error"
+        and issue.issue == "La versión seleccionada es de baja resolución."
+        for issue in issues
+    )
     assert "La impresión elegida no pertenece a la edición solicitada." in descriptions
     assert any(issue.severity == "Error" for issue in issues)
 
