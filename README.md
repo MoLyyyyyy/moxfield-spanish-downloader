@@ -50,12 +50,14 @@ El PDF utiliza automáticamente el perfil recomendado:
 - cartas de 63,5 × 88,9 mm;
 - sangrado espejo de 1 mm;
 - reverso estándar de Magic;
+- código automático y único de tres letras en cada reverso estándar;
 - marcas cortas de corte y marcas de imprenta;
 - páginas dúplex intercaladas como `1/1B`, `2/2B`, etc.
 
 Los archivos superiores a 200 MB se dividen automáticamente sin separar las
 parejas de páginas dúplex. Si la última hoja queda incompleta, la aplicación
 indica cuántos huecos quedan y cuántas cartas se pueden añadir para llenarla.
+Las segundas caras jugables nunca reciben el código del mazo.
 
 ## Instalación en Windows
 

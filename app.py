@@ -12,7 +12,6 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from mtg_downloader.archive import cache_stats
 from mtg_downloader.backs import standard_magic_back
 from mtg_downloader.card_names import canonical_card_name
 from mtg_downloader.deck_view import (
@@ -61,6 +60,7 @@ from mtg_downloader.preflight import (
     build_preflight_issues,
     issue_rows,
 )
+from mtg_downloader.deck_codes import codes_by_card
 from mtg_downloader.print_map import (
     preferred_page_pair_breaks,
 )
@@ -106,8 +106,8 @@ st.set_page_config(
 
 st.title("🃏 Proxy Maker")
 
-ANALYSIS_ENGINE_VERSION = "workflow-v5.5-highres-simple-export"
-BUILD_VERSION = "2026.08.26-workflow-v5.5-highres-simple-export"
+ANALYSIS_ENGINE_VERSION = "workflow-v5.6-deck-codes-simple-review"
+BUILD_VERSION = "2026.08.26-workflow-v5.6-deck-codes-simple-review"
 SCRYFALL_ALTERNATIVE_ORDER_VERSION = "configurable-v2"
 
 
@@ -1805,40 +1805,35 @@ if app_step == 1 and analysis_ready:
 def render_bulk_panel(filtered: list[int]) -> None:
     cards: list[ResolvedCard] = st.session_state["resolved_cards"]
     deck_position = active_deck_position()
-    with st.expander("⚙️ Edición masiva de este mazo", expanded=False):
-        selected_indices = st.multiselect(
-            "Cartas afectadas",
-            options=filtered,
-            format_func=lambda index: (
-                f"{cards[index].source.quantity}× {cards[index].source.name} — "
-                f"{gallery_status_label(cards[index])}"
-            ),
-            key=f"bulk_selected_indices_{deck_position}",
-        )
-        action = st.selectbox(
-            "Acción",
-            [
-                "Español y después inglés",
-                "Máxima calidad disponible",
-                "Respetar impresión exacta",
-                "Primer diseño MPCFill de mayor DPI",
-                "Unificar duplicados exactos con la primera selección",
-            ],
-            key=f"bulk_action_{deck_position}",
-        )
-        st.caption(
-            "La acción solo afecta al mazo activo. Nunca modifica cartas "
-            "de los demás mazos. Los diseños MPCFill se recortan "
-            "automáticamente."
-        )
-        if st.button(
-            "Aplicar acción masiva al mazo actual",
-            type="primary",
-            width="stretch",
-            key=f"bulk_apply_{deck_position}",
-        ):
-            apply_bulk_action(selected_indices, action)
-            st.rerun()
+    st.markdown("#### Edición masiva")
+    selected_indices = st.multiselect(
+        "Cartas afectadas",
+        options=filtered,
+        format_func=lambda index: (
+            f"{cards[index].source.quantity}× {cards[index].source.name} — "
+            f"{gallery_status_label(cards[index])}"
+        ),
+        key=f"bulk_selected_indices_{deck_position}",
+    )
+    action = st.selectbox(
+        "Acción",
+        [
+            "Español y después inglés",
+            "Máxima calidad disponible",
+            "Respetar impresión exacta",
+            "Primer diseño MPCFill de mayor DPI",
+            "Unificar duplicados exactos con la primera selección",
+        ],
+        key=f"bulk_action_{deck_position}",
+    )
+    if st.button(
+        "Aplicar acción masiva al mazo actual",
+        type="primary",
+        width="stretch",
+        key=f"bulk_apply_{deck_position}",
+    ):
+        apply_bulk_action(selected_indices, action)
+        st.rerun()
 
 
 def render_gallery_grouped_section(
@@ -1894,117 +1889,83 @@ def render_deck_gallery() -> None:
     summary = summaries[deck_position]
     deck_indices = indices_for_deck(deck_position, summaries)
     deck_cards = [cards[index] for index in deck_indices]
-    config = deck_config_for_position(deck_position)
 
     st.subheader(
         f"2. Mazo {deck_position + 1} de {len(summaries)} · "
         f"{summary['name']}"
     )
-    st.caption(
-        f"Ajustes de este mazo: {deck_settings_label(config)}. "
-        "La galería, los filtros y las acciones masivas están aislados "
-        "del resto de mazos."
-    )
-
-    analysis_stats = list(
-        st.session_state.get("deck_analysis_stats") or []
-    )
-    if deck_position < len(analysis_stats):
-        stats = analysis_stats[deck_position]
-        provider_label = (
-            "MPCFill"
-            if stats.get("provider") == "mpcfill"
-            else "Scryfall"
-        )
-        details = (
-            f"{provider_label}: {stats.get('resolved', 0)}/"
-            f"{stats.get('entries', len(deck_cards))} entradas con imagen"
-        )
-        if stats.get("provider") == "mpcfill":
-            details += (
-                f" · {stats.get('queries_with_hits', 0)} consultas "
-                f"con resultados · {stats.get('preferred_creator', 0)} "
-                "de autores preferidos"
-            )
-        st.info(details)
-
-    with ScryfallClient(
-        cache_dir(),
-        image_quality=config["image_quality"],
-    ) as cache_client:
-        cached, total_cache = cache_stats(deck_cards, cache_client)
 
     problem_count = sum(is_problematic(card) for card in deck_cards)
-    multiple_count = sum(
-        card_has_multiple_arts(card) for card in deck_cards
-    )
-    metrics = st.columns(5)
-    metrics[0].metric(
-        "Copias",
-        sum(card.source.quantity for card in deck_cards),
-    )
-    metrics[1].metric("Entradas", len(deck_cards))
-    metrics[2].metric("Pendientes", problem_count)
-    metrics[3].metric("Varios artes", multiple_count)
-    metrics[4].metric("Caché", f"{cached}/{total_cache}")
-
-    filter_cols = st.columns([2.4, 1, 1.2, 1, 1.1])
-    with filter_cols[0]:
-        query = st.text_input(
-            "Buscar",
-            placeholder="Nombre de carta",
-            key=f"gallery_query_{deck_position}",
-        )
-    with filter_cols[1]:
-        provider = st.selectbox(
-            "Fuente",
-            ["Todos", "Scryfall", "MPCFill", "Archivo propio"],
-            key=f"gallery_provider_{deck_position}",
-        )
-    with filter_cols[2]:
-        state = st.selectbox(
-            "Estado",
-            [
-                "Todos",
-                "Pendientes",
-                "Manuales",
-                "Múltiples artes",
-                "Baja resolución",
-                "Sin imagen",
-            ],
-            key=f"gallery_state_{deck_position}",
-        )
-    with filter_cols[3]:
-        language = st.selectbox(
-            "Idioma",
-            ["Todos", "es", "en"],
-            key=f"gallery_language_{deck_position}",
-        )
-    with filter_cols[4]:
-        sorting = st.selectbox(
-            "Orden",
-            ["Categoría", "Nombre", "Cantidad"],
-            key=f"gallery_sort_{deck_position}",
+    summary_columns = st.columns([1, 3])
+    with summary_columns[0]:
+        st.metric("Pendientes", problem_count)
+    with summary_columns[1]:
+        st.caption(
+            f"{sum(card.source.quantity for card in deck_cards)} cartas · "
+            f"{len(deck_cards)} entradas"
         )
 
-    local_indices = filtered_indices(
-        deck_cards,
-        query=query,
-        provider=provider,
-        state=state,
-        language=language,
-    )
-    indices = [deck_indices[index] for index in local_indices]
-    if sorting == "Nombre":
-        indices.sort(
-            key=lambda index: cards[index].source.name.casefold()
+    query = ""
+    provider = "Todos"
+    state = "Todos"
+    language = "Todos"
+    sorting = "Categoría"
+    with st.expander("Más opciones", expanded=False):
+        filter_cols = st.columns([2.2, 1, 1.2, 1, 1.1])
+        with filter_cols[0]:
+            query = st.text_input(
+                "Buscar",
+                placeholder="Nombre de carta",
+                key=f"gallery_query_{deck_position}",
+            )
+        with filter_cols[1]:
+            provider = st.selectbox(
+                "Fuente",
+                ["Todos", "Scryfall", "MPCFill", "Archivo propio"],
+                key=f"gallery_provider_{deck_position}",
+            )
+        with filter_cols[2]:
+            state = st.selectbox(
+                "Estado",
+                [
+                    "Todos",
+                    "Pendientes",
+                    "Manuales",
+                    "Múltiples artes",
+                    "Baja resolución",
+                    "Sin imagen",
+                ],
+                key=f"gallery_state_{deck_position}",
+            )
+        with filter_cols[3]:
+            language = st.selectbox(
+                "Idioma",
+                ["Todos", "es", "en"],
+                key=f"gallery_language_{deck_position}",
+            )
+        with filter_cols[4]:
+            sorting = st.selectbox(
+                "Orden",
+                ["Categoría", "Nombre", "Cantidad"],
+                key=f"gallery_sort_{deck_position}",
+            )
+        local_indices = filtered_indices(
+            deck_cards,
+            query=query,
+            provider=provider,
+            state=state,
+            language=language,
         )
-    elif sorting == "Cantidad":
-        indices.sort(
-            key=lambda index: -cards[index].source.quantity
-        )
-
-    render_bulk_panel(indices)
+        indices = [deck_indices[index] for index in local_indices]
+        if sorting == "Nombre":
+            indices.sort(
+                key=lambda index: cards[index].source.name.casefold()
+            )
+        elif sorting == "Cantidad":
+            indices.sort(
+                key=lambda index: -cards[index].source.quantity
+            )
+        render_bulk_panel(indices)
     if not indices:
         st.info("No hay cartas de este mazo que coincidan con los filtros.")
         return
@@ -2030,11 +1991,11 @@ def render_deck_gallery() -> None:
                 mpc_client,
             )
         else:
-            st.success("Este mazo no tiene cartas con problemas.")
+            st.success("Mazo listo.")
 
         if healthy_indices:
             with st.expander(
-                f"Ver {len(healthy_indices)} cartas correctas de este mazo",
+                f"Ver las {len(healthy_indices)} cartas correctas",
                 expanded=False,
             ):
                 render_gallery_grouped_section(
@@ -2899,104 +2860,27 @@ def render_deck_review_navigation(
             )
             st.rerun()
 
-        with st.expander("Reanalizar o cambiar ajustes de este mazo", expanded=False):
-            current_config = deck_config_for_position(position)
-            setting_columns = st.columns(2)
-            with setting_columns[0]:
-                reanalysis_source = st.selectbox(
-                    "Fuente",
-                    ["scryfall", "mpcfill"],
-                    index=(
-                        1
-                        if current_config["preferred_image_source"] == "mpcfill"
-                        else 0
-                    ),
-                    format_func=lambda value: (
-                        "MPCFill" if value == "mpcfill" else "Scryfall"
-                    ),
-                    key=f"reanalysis_source_{position}",
-                )
-                reanalysis_language = st.selectbox(
-                    "Idioma principal",
-                    ["es", "en"],
-                    index=(
-                        1 if current_config["preferred_language"] == "en" else 0
-                    ),
-                    format_func=lambda value: (
-                        "Inglés" if value == "en" else "Español"
-                    ),
-                    key=f"reanalysis_language_{position}",
-                )
-            with setting_columns[1]:
-                resolution_values = ["exact_first", "exact_only", "flexible"]
-                reanalysis_resolution = st.selectbox(
-                    "Edición",
-                    resolution_values,
-                    index=resolution_values.index(
-                        current_config["resolution_mode"]
-                    ),
-                    format_func=lambda value: {
-                        "exact_first": "Edición indicada primero",
-                        "exact_only": "Solo la edición indicada",
-                        "flexible": "Cualquier edición",
-                    }[value],
-                    key=f"reanalysis_resolution_{position}",
-                )
-                reanalysis_image_quality = st.selectbox(
-                    "Formato de imagen",
-                    ["png", "large"],
-                    index=(0 if current_config["image_quality"] == "png" else 1),
-                    format_func=lambda value: (
-                        "PNG · máxima calidad"
-                        if value == "png"
-                        else "JPG grande · menos espacio"
-                    ),
-                    key=f"reanalysis_image_quality_{position}",
-                )
-
-            preserve_customised = st.checkbox(
-                "Conservar versiones, repartos y recortes manuales",
-                value=True,
-                key=f"preserve_customised_{position}",
+        reanalysis_columns = st.columns(2)
+        with reanalysis_columns[0]:
+            retry_pending = st.button(
+                "Reintentar pendientes",
+                width="stretch",
+                key=f"retry_pending_{position}",
             )
-            reanalysis_config = {
-                **current_config,
-                "preferred_image_source": reanalysis_source,
-                "preferred_language": reanalysis_language,
-                "allow_language_fallback": reanalysis_language == "es",
-                "resolution_mode": reanalysis_resolution,
-                "quality_mode": "highres_only",
-                "image_quality": reanalysis_image_quality,
-            }
-            reanalysis_columns = st.columns(2)
-            with reanalysis_columns[0]:
-                retry_pending = st.button(
-                    "Reintentar solo pendientes",
-                    width="stretch",
-                    key=f"retry_pending_{position}",
-                )
-            with reanalysis_columns[1]:
-                reanalyse_all = st.button(
-                    "Aplicar ajustes y reanalizar el mazo",
-                    width="stretch",
-                    key=f"reanalyse_all_{position}",
-                )
-            st.caption(
-                "Solo se modifica el mazo activo. Los otros mazos y sus "
-                "correcciones permanecen intactos."
+        with reanalysis_columns[1]:
+            change_settings = st.button(
+                "Volver al paso 1 para cambiar ajustes",
+                width="stretch",
+                key=f"change_settings_{position}",
             )
-            if retry_pending and reanalyse_active_deck(
-                only_problematic=True,
-                preserve_customised=preserve_customised,
-                config_override=reanalysis_config,
-            ):
-                st.rerun()
-            if reanalyse_all and reanalyse_active_deck(
-                only_problematic=False,
-                preserve_customised=preserve_customised,
-                config_override=reanalysis_config,
-            ):
-                st.rerun()
+        if retry_pending and reanalyse_active_deck(
+            only_problematic=True,
+            preserve_customised=True,
+        ):
+            st.rerun()
+        if change_settings:
+            st.session_state["app_step"] = 1
+            st.rerun()
 
     columns = st.columns([1, 1.4, 1.4])
     with columns[0]:
@@ -3050,16 +2934,7 @@ def render_workspace() -> None:
     current = st.session_state.get("workspace_mode", options[0])
     if current not in options:
         current = options[0]
-    version = st.session_state.get("workspace_selector_version", 0)
-    mode = st.radio(
-        "Modo de trabajo",
-        options,
-        index=options.index(current),
-        horizontal=True,
-        key=f"workspace_selector_{version}",
-    )
-    st.session_state["workspace_mode"] = mode
-    if mode == "Vista del mazo":
+    if current == "Vista del mazo":
         render_deck_gallery()
     else:
         render_review_panel()
@@ -3083,6 +2958,7 @@ def render_export_panel() -> None:
         st.session_state.get("deck_summaries") or []
     )
     deck_count = max(len(deck_summaries), 1)
+    deck_codes = codes_by_card(deck_summaries, len(cards))
 
     validation = validate_deck(
         cards,
@@ -3193,6 +3069,7 @@ def render_export_panel() -> None:
                 "preferred_deck_breaks": sorted(
                     preferred_page_pair_breaks(deck_summaries)
                 ),
+                "deck_codes": deck_codes,
             },
             ensure_ascii=False,
             sort_keys=True,
@@ -3275,6 +3152,7 @@ def render_export_panel() -> None:
                         cut_line_color=cut_line_color,
                         cut_line_over_cards=cut_line_over_cards,
                         printer_marks=printer_marks,
+                        deck_codes=deck_codes,
                         progress_callback=update_pdf_progress,
                     )
 
