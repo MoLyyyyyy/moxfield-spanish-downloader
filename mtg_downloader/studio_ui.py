@@ -45,6 +45,17 @@ border:1px dashed #68755f;background:#202522;border-radius:8px;color:#c2d69a;tex
 .st-key-studio_gallery [data-testid="stExpander"] [data-testid="stHorizontalBlock"] {flex-wrap:wrap}
 .st-key-studio_editor [data-testid="stColumn"]:has([data-testid="stSelectbox"],[data-testid="stTextInput"]),
 .st-key-studio_gallery [data-testid="stExpander"] [data-testid="stColumn"] {flex:1 1 140px!important;min-width:0!important}
+/* Pin the outer editor column; its content may be taller than the viewport.
+   Keep the stacked layout below unchanged on smaller windows. */
+@media(min-width:1101px) {
+ .st-key-studio_workspace [data-testid="stColumn"]:has(.st-key-studio_editor) {
+  position:sticky;top:4.5rem;align-self:flex-start;
+ }
+ .st-key-studio_editor {
+  max-height:calc(100dvh - 5.5rem);overflow-y:auto;overflow-x:hidden;
+  scrollbar-gutter:stable;
+ }
+}
 @media(max-width:1100px) {
  .st-key-studio_workspace > [data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"],
  .st-key-studio_workspace [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] .st-key-studio_editor)

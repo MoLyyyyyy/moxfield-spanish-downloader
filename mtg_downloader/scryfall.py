@@ -40,9 +40,13 @@ def _candidate_matches_full_name(
     candidate_name = str(candidate.get("name") or "")
     if not candidate_name:
         return False
-    return (
-        _normalised_card_name(candidate_name)
-        == _normalised_card_name(requested_name)
+    # Reskins retain their Oracle name in `name`; the complete alternate
+    # title lives in `flavor_name`. Do not match individual card faces.
+    return any(
+        isinstance(name, str)
+        and bool(name.strip())
+        and _normalised_card_name(name) == _normalised_card_name(requested_name)
+        for name in (candidate_name, candidate.get("flavor_name"))
     )
 
 
