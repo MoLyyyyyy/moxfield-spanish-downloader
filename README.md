@@ -13,6 +13,14 @@ Moxfield en un PDF A4 listo para imprimir.
 La aplicación respeta cantidades, ediciones, números de coleccionista,
 sideboard, maybeboard y cartas de dos caras.
 
+## Interfaz Studio
+
+Los tres pasos —Importar, Revisar y PDF— están siempre en la cabecera.
+En el lateral puedes cambiar de mazo, ver su código y sus pendientes,
+y guardar o cargar un proyecto. En revisión, la galería permanece visible
+junto al editor; en ventanas pequeñas ambos paneles se apilan.
+Los filtros, recorte y reparto de copias siguen disponibles bajo sus opciones.
+
 ## Imágenes
 
 La selección automática exige siempre alta resolución:
@@ -43,6 +51,10 @@ Chilli_Axe, CompC y Hathwellcrisping.
 
 El paso final muestra únicamente las incidencias bloqueantes, el número de
 hojas, los huecos de la última hoja y la acción de generar o descargar.
+Después de generar aparece una vista reducida del PDF real: permite recorrer
+anversos y reversos y, en archivos divididos, elegir la parte. No modifica el
+archivo de impresión. Si cambias una selección, se descarta la salida anterior.
+Un fallo al mostrar la vista previa no impide guardar el PDF generado.
 
 El PDF utiliza automáticamente el perfil recomendado:
 

@@ -15,7 +15,9 @@ from pathlib import Path
 
 
 def server_options(port: int) -> dict:
+    from mtg_downloader.studio_ui import theme_options
     return {
+        **theme_options(),
         'server.address': '127.0.0.1',
         'server.port': port,
         'server.headless': True,

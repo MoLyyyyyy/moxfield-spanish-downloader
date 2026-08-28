@@ -89,15 +89,13 @@ def test_gallery_filters_and_statuses_exist() -> None:
     assert 'with st.expander("Más opciones", expanded=False):' in app
 
 
-def test_step_two_focuses_on_pending_cards_and_hides_internal_metrics() -> None:
-    app = app_text()
-
-    assert 'st.metric("Pendientes", problem_count)' in app
-    assert 'f"Ver las {len(healthy_indices)} cartas correctas"' in app
-    assert 'st.radio(\n        "Modo de trabajo"' not in app
-    assert 'metrics[4].metric("Caché"' not in app
-    assert "consultas con resultados" not in app
-    assert "Volver al paso 1 para cambiar ajustes" in app
+def test_step_two_focuses_on_pending_cards_and_hides_internal_metrics(tmp_path) -> None:
+    from test_studio_workspace import prepared_app
+    app = prepared_app(tmp_path)
+    assert not app.exception
+    edits = [b.key for b in app.button if (b.key or "").startswith("gallery_edit_")]
+    assert edits == ["gallery_edit_1", "gallery_edit_0"]
+    assert not app.metric
 
 
 def test_validation_and_simplified_export_actions_exist() -> None:
@@ -150,15 +148,11 @@ def test_pdf_uses_generate_then_download_flow() -> None:
 
 
 
-def test_problematic_cards_are_grouped_first_in_gallery() -> None:
-    app = app_text()
-    assert "def render_gallery_grouped_section(" in app
-    assert "⚠️ Cartas con problemas" in app
-    assert "Ver las {len(healthy_indices)} cartas correctas" in app
-    assert "problematic_indices = [" in app
-    assert "healthy_indices = [" in app
-    assert "Estas cartas necesitan revisión" in app
-    assert "Ver las {len(healthy_indices)} cartas correctas" in app
+def test_problematic_cards_are_grouped_first_in_gallery(tmp_path) -> None:
+    from test_studio_workspace import prepared_app
+    app = prepared_app(tmp_path)
+    labels = [m.value for m in app.markdown]
+    assert labels.index("## Pendientes") < labels.index("**1× Forest**")
 
 
 
@@ -176,9 +170,6 @@ def test_language_controls_are_explicit() -> None:
 
 def test_app_uses_a_three_step_wizard() -> None:
     app = app_text()
-    assert "1. Lista y opciones" in app
-    assert "2. Revisar versiones" in app
-    assert "3. Validar y exportar" in app
     assert 'st.form("analysis_form")' not in app
     assert 'analysis_submitted = st.button(' in app
     assert 'st.session_state["app_step"] = 2' in app
@@ -238,7 +229,8 @@ def test_decklist_placeholder_uses_real_line_breaks() -> None:
 def test_application_is_named_proxy_maker() -> None:
     app = app_text()
     assert 'page_title="Proxy Maker"' in app
-    assert 'st.title("🃏 Proxy Maker")' in app
+    from streamlit.testing.v1 import AppTest
+    assert AppTest.from_file(str(Path("app.py").resolve())).run().title[0].value == "Proxy Maker"
     assert "Moxfield Cartas ES" not in app
     readme = Path("README.md").read_text(encoding="utf-8")
     assert readme.startswith("# Proxy Maker")
@@ -258,7 +250,6 @@ def test_step_two_can_return_without_losing_analysis() -> None:
     app = app_text()
     assert '"← Lista y opciones"' in app
     assert 'key=f"step2_back_{location}"' in app
-    assert "Cada mazo conserva su propia configuración" in app
     assert "Volver a revisar el análisis guardado" in app
     assert "Descartar cambios y volver al análisis guardado" in app
     assert 'st.session_state["app_step"] = 1' in app
@@ -285,11 +276,12 @@ def test_step_one_keeps_advanced_options_per_deck() -> None:
     assert 'key=f"deck_fallback_{deck_position}"' not in app
 
 
-def test_healthy_cards_are_collapsed() -> None:
-    app = app_text()
-    assert 'f"Ver las {len(healthy_indices)} cartas correctas"' in app
-    assert 'expanded=False' in app
-    assert 'st.success("Mazo listo.")' in app
+def test_healthy_cards_remain_accessible_beside_the_editor(tmp_path) -> None:
+    from test_studio_workspace import prepared_app
+    app = prepared_app(tmp_path)
+    app.button(key="gallery_edit_0").click().run()
+    assert app.button(key="gallery_edit_1")
+    assert any(h.value == "Forest" for h in app.subheader)
 
 
 
@@ -400,7 +392,7 @@ def test_export_warns_about_paid_empty_slots() -> None:
 
 def test_multiple_deck_inputs_have_independent_settings() -> None:
     app = app_text()
-    assert '"➕"' in app
+    assert '"Añadir"' in app
     assert 'Eliminar mazo actual' in app
     assert 'deck_config_drafts' in app
     assert 'key=f"decklist_input_{deck_position}"' in app
@@ -417,17 +409,21 @@ def test_multiple_deck_inputs_have_independent_settings() -> None:
 
 def test_multiple_decks_fill_pages_continuously() -> None:
     app = app_text()
-    assert "rellena los huecos libres" in app
+    assert "para que el siguiente mazo rellene los huecos del anterior" in app
     assert "posiciones pagadas" in app
     assert "warn_duplicates=deck_count == 1" in app
     assert "multi_deck_pdf_filename(" in app
 
 
 
-def test_build_version_identifies_multideck_download() -> None:
-    app = app_text()
-    assert 'BUILD_VERSION = "2026.08.26-workflow-v5.6-deck-codes-simple-review"' in app
-    assert '"➕"' in app
+def test_build_version_identifies_project_export(tmp_path, monkeypatch) -> None:
+    import json
+    from test_studio_workspace import prepared_app
+    monkeypatch.setenv("PROXY_MAKER_DATA_DIR", str(tmp_path / "Datos"))
+    app = prepared_app(tmp_path)
+    next(b for b in app.button if b.label == "Guardar proyecto completo").click().run()
+    payload = next((tmp_path / "Datos" / "Proyectos").glob("*.json")).read_bytes()
+    assert "2026.08.28-studio" in json.dumps(json.loads(payload))
 
 
 
@@ -549,7 +545,7 @@ def test_loaded_project_reports_restored_manual_versions() -> None:
 
 def test_step_one_uses_add_deck_button_instead_of_number_selector() -> None:
     app = app_text()
-    assert '"➕"' in app
+    assert '"Añadir"' in app
     assert 'Eliminar mazo actual' in app
     assert 'deck_config_drafts' in app
     assert 'Número de mazos' not in app
@@ -567,7 +563,7 @@ def test_manual_upload_source_exists() -> None:
 def test_deck_buttons_do_not_mutate_radio_key_after_creation() -> None:
     app = app_text()
     radio_start = app.index('st.radio(\n                "Mazos",')
-    editor_start = app.index('st.markdown(f"### Configuración del mazo', radio_start)
+    editor_start = app.index('st.subheader(base.get("deck_name")', radio_start)
     button_section = app[radio_start:editor_start]
 
     assert '"deck_config_active_pending"' in button_section
@@ -605,7 +601,7 @@ def test_deck_controls_sync_widget_values_before_mutating_drafts() -> None:
     helper = app.index('def sync_deck_draft_from_widgets(')
     add_button = app.index('help="Añadir mazo"', helper)
     delete_button = app.index('help="Eliminar mazo actual"', add_button)
-    editor = app.index('st.markdown(f"### Configuración del mazo', delete_button)
+    editor = app.index('st.subheader(base.get("deck_name")', delete_button)
     controls = app[add_button:editor]
 
     assert controls.count(
