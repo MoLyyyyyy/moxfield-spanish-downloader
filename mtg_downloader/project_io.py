@@ -5,7 +5,6 @@ import copy
 import hashlib
 import json
 import binascii
-import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 from dataclasses import dataclass
@@ -14,6 +13,7 @@ from typing import Any
 
 from .models import DeckCard, ResolvedCard
 from .persistence import _face_to_dict, _resolved_from_dict, _resolved_to_dict
+from .portable import image_cache_dir
 
 PROJECT_SCHEMA_VERSION = 3
 SUPPORTED_PROJECT_SCHEMA_VERSIONS = {1, 2, 3}
@@ -48,7 +48,7 @@ class LoadedProject:
 
 
 def _project_uploads_dir() -> Path:
-    path = Path(tempfile.gettempdir()) / "moxfield_cartas_es_cache" / "user_uploads"
+    path = image_cache_dir('scryfall') / 'user_uploads'
     path.mkdir(parents=True, exist_ok=True)
     return path
 

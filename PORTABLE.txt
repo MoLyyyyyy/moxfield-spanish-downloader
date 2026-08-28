@@ -1,0 +1,33 @@
+PROXY MAKER - WINDOWS PORTABLE
+
+1. Extrae TODO el ZIP en una carpeta donde puedas guardar archivos.
+2. Abre ProxyMaker.exe. No necesitas instalar Python.
+3. No separes el ejecutable de la carpeta _internal.
+
+Requisitos: Windows 10/11 de 64 bits, .NET Framework 4.8 y Microsoft Edge
+WebView2 Runtime. Si WebView2 no esta instalado, descargalo de Microsoft:
+https://developer.microsoft.com/microsoft-edge/webview2/
+
+Los mazos se procesan en tu ordenador. Internet sigue siendo necesario para
+buscar y descargar imagenes de Scryfall/MPCFill. La aplicacion solo escucha
+en 127.0.0.1; no necesita desplegarse en ninguna web.
+
+DATOS
+Datos\cache: imagenes descargadas y subidas.
+Datos\Proyectos: proyectos guardados con el boton Guardar proyecto completo.
+Datos\Exportaciones: PDF y ZIP guardados con el boton Guardar PDF/ZIP.
+Datos\Navegador: perfil de la ventana integrada.
+Datos\logs: registros para diagnosticar errores.
+
+Guarda el proyecto antes de cerrar: la sesion en memoria NO se guarda sola.
+Para mover la aplicacion, cierra la ventana y copia TODA la carpeta,
+incluida Datos. Para actualizar, conserva Datos y sustituye los archivos
+del programa. No uses una carpeta protegida como Archivos de programa.
+
+Al cerrar la ventana se detiene tambien el servidor local. Si falta espacio
+o la carpeta no permite escritura, la aplicacion muestra un error.
+
+El ejecutable no esta firmado digitalmente. Windows puede mostrar un aviso
+de editor desconocido; verifica la procedencia del ZIP antes de ejecutarlo.
+Las licencias de las dependencias se incluyen dentro de _internal cuando
+las proporciona su distribucion; consulta tambien THIRD_PARTY_NOTICES.md.

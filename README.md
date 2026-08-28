@@ -61,6 +61,64 @@ Las segundas caras jugables nunca reciben el código del mazo.
 
 ## Instalación en Windows
 
+### Portable (ventana independiente)
+
+Descomprime todo `ProxyMaker-Windows-portable.zip` y abre `ProxyMaker.exe`.
+No necesita Python ni un servidor externo. Requiere Windows 10/11 x64,
+.NET Framework 4.8 y Microsoft Edge WebView2 Runtime.
+
+Las imágenes se guardan en `Datos/cache`; los botones de guardar escriben
+proyectos en `Datos/Proyectos` y PDF/ZIP en `Datos/Exportaciones`, sin
+sobrescribir archivos existentes. Guarda tu proyecto antes de cerrar.
+Para mover la aplicación, copia toda la carpeta, incluida `Datos`.
+Las búsquedas y descargas siguen necesitando Internet.
+
+Para compilar en Windows:
+
+```powershell
+python -m pip install -r requirements-desktop.txt
+python build_portable.py
+```
+
+El resultado aparece en `dist/ProxyMaker-Windows-portable.zip`.
+La versión web y el arranque con Python siguen disponibles.
+
+### Generar una release con GitHub Actions
+
+Primero sube a `main` los archivos del portable y el workflow
+`.github/workflows/release.yml`. Después crea y sube una etiqueta nueva:
+
+```bash
+git tag v1.0.0-beta.1
+git push origin v1.0.0-beta.1
+```
+
+Usa una versión distinta en cada entrega (`v1.0.0`, `v1.0.1`, etc.).
+La etiqueta debe apuntar al commit que quieras distribuir, con todos los
+archivos del portable incluidos.
+
+El workflow **Windows portable release** ejecuta las pruebas, compila en
+Windows x64, comprueba el servidor del EXE extraído y crea una **release
+en borrador** con el ZIP. Las etiquetas con sufijo, como `-beta.1`, se marcan
+como preliminares. No publica automáticamente ni sobrescribe releases.
+
+También puedes ir a **Actions → Windows portable release → Run workflow**
+e indicar una etiqueta que ya exista. El botón aparece cuando el workflow
+está en la rama predeterminada. Siempre se compila la etiqueta indicada,
+no la rama seleccionada en el formulario.
+
+Al terminar, abre **Releases**, revisa el borrador, descarga y prueba la
+ventana y la exportación de un PDF, y pulsa **Publish release**. El test
+automático del servidor no valida visualmente WebView2.
+
+No necesitas añadir un token personal: se utiliza `GITHUB_TOKEN`, con
+permiso de escritura solo en el trabajo que crea el borrador. Si las políticas
+del repositorio u organización bloquean Actions o ese permiso, habrá que
+habilitarlos. Si la release ya existe, el workflow falla sin modificarla;
+el ZIP queda disponible en los artefactos de la ejecución durante 14 días.
+
+### Desde el código fuente
+
 1. Instala Python 3.11 o superior.
 2. Descarga o clona el repositorio.
 3. Ejecuta `instalar.bat` una vez.

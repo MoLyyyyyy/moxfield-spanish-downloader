@@ -276,7 +276,12 @@ def uploaded_card(tmp_path: Path) -> ResolvedCard:
     )
 
 
-def test_project_embeds_uploaded_images_and_restores_them(tmp_path) -> None:
+@pytest.mark.parametrize('portable', [False, True])
+def test_project_embeds_uploaded_images_and_restores_them(tmp_path, monkeypatch, portable) -> None:
+    if portable:
+        monkeypatch.setenv('PROXY_MAKER_DATA_DIR', str(tmp_path / 'Datos'))
+    else:
+        monkeypatch.delenv('PROXY_MAKER_DATA_DIR', raising=False)
     card = uploaded_card(tmp_path)
     config = {
         "decks": [
@@ -325,4 +330,7 @@ def test_project_embeds_uploaded_images_and_restores_them(tmp_path) -> None:
     assert restored.faces[0].provider == "upload"
     assert Path(restored.faces[0].url).read_bytes() == b"front-custom-bytes"
     assert Path(restored.faces[1].url).read_bytes() == b"back-custom-bytes"
+    if portable:
+        assert Path(restored.faces[0].url).is_relative_to(tmp_path / 'Datos')
+        assert Path(restored.faces[1].url).is_relative_to(tmp_path / 'Datos')
     assert _resolved_to_dict(restored) == _resolved_to_dict(card)

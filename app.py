@@ -97,6 +97,7 @@ from mtg_downloader.selections import (
     set_allocation_quantities,
 )
 from mtg_downloader.validation import validate_deck
+from mtg_downloader.portable import data_dir, image_cache_dir, render_save_button
 
 st.set_page_config(
     page_title="Proxy Maker",
@@ -274,16 +275,22 @@ with st.expander("💾 Guardar o cargar proyecto", expanded=False):
         project_revision = int(
             st.session_state.get("project_revision") or 0
         )
-        st.download_button(
-            "Guardar proyecto completo",
-            data=project_data,
-            file_name=(
-                f"proxy-maker-project-r{project_revision}.json"
-            ),
-            mime="application/json",
-            width="stretch",
-            on_click="ignore",
-        )
+        if data_dir() is not None:
+            render_save_button(
+                "Guardar proyecto completo", project_data,
+                f"proxy-maker-project-r{project_revision}.json", "Proyectos",
+            )
+        else:
+            st.download_button(
+                "Guardar proyecto completo",
+                data=project_data,
+                file_name=(
+                    f"proxy-maker-project-r{project_revision}.json"
+                ),
+                mime="application/json",
+                width="stretch",
+                on_click="ignore",
+            )
         selection_summary = project_selection_summary(
             list(st.session_state.get("resolved_cards") or [])
         )
@@ -841,11 +848,11 @@ def filter_scryfall_alternatives(
 
 
 def cache_dir() -> Path:
-    return Path(tempfile.gettempdir()) / "moxfield_cartas_es_cache"
+    return image_cache_dir("scryfall")
 
 
 def mpc_cache_dir() -> Path:
-    return Path(tempfile.gettempdir()) / "moxfield_cartas_es_mpcfill_cache"
+    return image_cache_dir("mpcfill")
 
 
 def uploads_cache_dir() -> Path:
@@ -3217,15 +3224,22 @@ def render_export_panel() -> None:
         )
     else:
         pdf_download = st.session_state["pdf_output_download"]
-        st.download_button(
-            pdf_download["label"],
-            data=pdf_download["data"],
-            file_name=pdf_download["file_name"],
-            mime=pdf_download["mime"],
-            type="primary",
-            width="stretch",
-            on_click="ignore",
-        )
+        if data_dir() is not None:
+            render_save_button(
+                "Guardar PDF" if pdf_download["part_count"] == 1 else "Guardar ZIP",
+                pdf_download["data"], pdf_download["file_name"],
+                "Exportaciones", primary=True,
+            )
+        else:
+            st.download_button(
+                pdf_download["label"],
+                data=pdf_download["data"],
+                file_name=pdf_download["file_name"],
+                mime=pdf_download["mime"],
+                type="primary",
+                width="stretch",
+                on_click="ignore",
+            )
 
         if pdf_download["part_count"] == 1:
             st.caption(
