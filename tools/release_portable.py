@@ -1,4 +1,4 @@
-"""Create a draft only; never replace assets or publish an existing release."""
+"""Publish a verified portable, preserving existing release assets."""
 import os
 import json
 from pathlib import Path
@@ -25,7 +25,7 @@ def release_command(tag: str, archive: Path) -> list[str]:
     return command
 
 
-def ensure_release_absent(tag: str) -> None:
+def find_release(tag: str) -> dict | None:
     validate_tag(tag)
     response = subprocess.run(
         ['gh', 'api', '--paginate', '--slurp', 'repos/{owner}/{repo}/releases'],
@@ -35,11 +35,30 @@ def ensure_release_absent(tag: str) -> None:
     for page in json.loads(response.stdout):
         for release in page:
             if release['tag_name'] == tag:
-                raise ValueError(f'La release {tag} ya existe; no se modificará.')
+                return release
+    return None
+
+
+def publish_release(tag: str, archive: Path) -> None:
+    command = release_command(tag, archive)
+    release = find_release(tag)
+    if release is None:
+        # Attach the ZIP before making the new release public.
+        subprocess.run(command, check=True)
+        draft = True
+    else:
+        if not any(asset['name'] == archive.name for asset in release['assets']):
+            subprocess.run(['gh', 'release', 'upload', tag, str(archive)], check=True)
+        else:
+            print(f'{archive.name} ya existe; se conserva sin sobrescribir.')
+        draft = release['draft']
+    if draft:
+        command = ['gh', 'release', 'edit', tag, '--draft=false']
+        if '-' in tag:
+            command.append('--prerelease')
+        subprocess.run(command, check=True)
 
 
 if __name__ == '__main__':
     tag = os.environ['RELEASE_TAG']
-    command = release_command(tag, Path('dist/ProxyMaker-Windows-portable.zip'))
-    ensure_release_absent(tag)
-    subprocess.run(command, check=True)
+    publish_release(tag, Path('dist/ProxyMaker-Windows-portable.zip'))

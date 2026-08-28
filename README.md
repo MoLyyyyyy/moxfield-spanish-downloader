@@ -110,24 +110,26 @@ La etiqueta debe apuntar al commit que quieras distribuir, con todos los
 archivos del portable incluidos.
 
 El workflow **Windows portable release** ejecuta las pruebas, compila en
-Windows x64, comprueba el servidor del EXE extraído y crea una **release
-en borrador** con el ZIP. Las etiquetas con sufijo, como `-beta.1`, se marcan
-como preliminares. No publica automáticamente ni sobrescribe releases.
+Windows x64, comprueba el servidor del EXE extraído y **publica automáticamente
+la release con el ZIP**. Las nuevas releases con sufijo, como `-beta.1`, se marcan
+como preliminares. Si ya existe la release, añade el ZIP que falte y publica
+el borrador si lo hubiera. No sobrescribe archivos existentes ni cambia sus notas.
 
 También puedes ir a **Actions → Windows portable release → Run workflow**
 e indicar una etiqueta que ya exista. El botón aparece cuando el workflow
 está en la rama predeterminada. Siempre se compila la etiqueta indicada,
 no la rama seleccionada en el formulario.
 
-Al terminar, abre **Releases**, revisa el borrador, descarga y prueba la
-ventana y la exportación de un PDF, y pulsa **Publish release**. El test
-automático del servidor no valida visualmente WebView2.
+Antes de crear la etiqueta pública, prueba localmente la ventana y la exportación
+de un PDF. El test automático del servidor no valida visualmente WebView2.
+Al terminar la Action, el ZIP estará disponible en **Releases** sin pasos manuales.
 
 No necesitas añadir un token personal: se utiliza `GITHUB_TOKEN`, con
-permiso de escritura solo en el trabajo que crea el borrador. Si las políticas
+permiso de escritura solo en el trabajo que publica la release. Si las políticas
 del repositorio u organización bloquean Actions o ese permiso, habrá que
-habilitarlos. Si la release ya existe, el workflow falla sin modificarla;
-el ZIP queda disponible en los artefactos de la ejecución durante 14 días.
+habilitarlos. En una repetición, un ZIP con el mismo nombre se conserva; para
+distribuir cambios usa una etiqueta nueva. El ZIP compilado también queda
+disponible en los artefactos de la ejecución durante 14 días.
 
 ### Desde el código fuente
 

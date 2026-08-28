@@ -101,7 +101,7 @@ jobs:
         env:
           EXPECTED_SHA: ${{ needs.test.outputs.sha }}
         run: test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$EXPECTED_SHA"
-      - name: Crear release en borrador con el ZIP
+      - name: Publicar release y adjuntar el ZIP sin sobrescribir archivos
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
