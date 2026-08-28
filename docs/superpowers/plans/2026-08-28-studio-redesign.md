@@ -14,6 +14,23 @@ la nueva dependencia. PyInstaller para verificar el portable.
 
 **Spec:** `docs/superpowers/specs/2026-08-28-proxy-maker-studio-design.md`
 
+## Registro de ejecución — 28 de agosto
+
+Implementado secuencialmente en `studio-redesign`, con revisión independiente.
+La entrega se agrupa en un único commit de implementación. La lista inferior
+conserva el plan original; el resultado y el alcance exacto de las pruebas
+están en [el informe de verificación](../verification/2026-08-28-studio.md).
+
+- [x] Tema, navegación e importación Studio.
+- [x] Galería y editor contextual, con mazos en el lateral.
+- [x] Vista previa del PDF real, páginas/partes e invalidación.
+- [x] Suite de 268 pruebas y revisión de código independiente.
+- [x] Inspección web a 1280×850, 960×640 y 390×844.
+- [x] Portable compilado, extraído y probado: arranque, análisis, PDF,
+  rasterización con PDFium incluido, guardado y cierre del servidor.
+- [ ] Comprobación visual de la ventana nativa WebView2.
+- [ ] Integración/publicación: requiere decisión del usuario.
+
 ## Global Constraints
 
 - Conservar Streamlit, el servidor local y la ventana portable existentes.

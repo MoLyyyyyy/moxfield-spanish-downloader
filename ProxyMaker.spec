@@ -3,6 +3,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy
 datas = collect_data_files('streamlit')
 datas += copy_metadata('streamlit', recursive=True)
 datas += copy_metadata('pywebview', recursive=True)
+datas += copy_metadata('pypdfium2')
 datas += [('app.py', '.'), ('mtg_downloader/assets', 'mtg_downloader/assets')]
 hiddenimports = collect_submodules('streamlit')
 hiddenimports += collect_submodules('mtg_downloader', filter=lambda name: name != 'mtg_downloader.app')

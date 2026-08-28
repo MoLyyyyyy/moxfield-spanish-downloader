@@ -60,7 +60,7 @@ from mtg_downloader.preflight import (
     build_preflight_issues,
     issue_rows,
 )
-from mtg_downloader.deck_codes import codes_by_card
+from mtg_downloader.deck_codes import assign_deck_codes, codes_by_card
 from mtg_downloader.print_map import (
     preferred_page_pair_breaks,
 )
@@ -98,17 +98,21 @@ from mtg_downloader.selections import (
 )
 from mtg_downloader.validation import validate_deck
 from mtg_downloader.portable import data_dir, image_cache_dir, render_save_button
+from mtg_downloader.studio_ui import apply_studio_theme, render_step_navigation, render_generated_preview
 
 st.set_page_config(
     page_title="Proxy Maker",
     page_icon="🃏",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-st.title("🃏 Proxy Maker")
+apply_studio_theme()
+st.title("Proxy Maker")
+st.sidebar.markdown('<div class="studio-brand">Proxy Maker <span>Studio</span></div>', unsafe_allow_html=True)
 
 ANALYSIS_ENGINE_VERSION = "workflow-v5.6-deck-codes-simple-review"
-BUILD_VERSION = "2026.08.26-workflow-v5.6-deck-codes-simple-review"
+BUILD_VERSION = "2026.08.28-studio"
 SCRYFALL_ALTERNATIVE_ORDER_VERSION = "configurable-v2"
 
 
@@ -219,32 +223,17 @@ if app_step not in {1, 2, 3}:
     app_step = 1
     st.session_state["app_step"] = 1
 
-step_labels = (
-    "1. Lista y opciones",
-    "2. Revisar versiones",
-    "3. Validar y exportar",
-)
-step_columns = st.columns(3)
-for step_number, (column, label) in enumerate(
-    zip(step_columns, step_labels),
-    start=1,
-):
-    with column:
-        if step_number == app_step:
-            st.markdown(f"### **{label}**")
-        elif step_number < app_step:
-            st.markdown(f"### ✅ {label}")
-        else:
-            st.markdown(f"### {label}")
-st.progress((app_step - 1) / 2)
+# Render the controls here only after current draft settings have been read.
+# Clicking away must not silently bypass invalidation of an edited draft.
+navigation_slot = st.container()
 
 flash_message = st.session_state.pop("flash_message", None)
 if flash_message:
     st.success(flash_message)
 
 
-with st.expander("💾 Guardar o cargar proyecto", expanded=False):
-    project_columns = st.columns([2, 1])
+with st.sidebar.expander("Guardar o cargar proyecto", expanded=False):
+    project_columns = [st.container(), st.container()]
     with project_columns[0]:
         uploaded_project = st.file_uploader(
             "Archivo de proyecto Proxy Maker",
@@ -307,16 +296,13 @@ saved_config = dict(st.session_state.get("analysis_config") or {})
 analysis_submitted = False
 
 if app_step == 1:
-    st.write(
-        "Configura cada mazo por separado. Cada lista conserva su propia "
-        "fuente, idioma, edición y calidad durante todo el análisis y la revisión."
-    )
+    st.caption("Importa tus mazos, elige las imágenes y prepara la impresión.")
 
-    with st.expander("Cómo funciona el modo multimazo", expanded=False):
+    with st.sidebar.expander("Cómo funciona el modo multimazo", expanded=False):
         st.markdown(
             """
-1. Crea cada mazo con el botón **➕**.
-2. Cambia entre mazos desde la barra superior.
+1. Crea cada mazo con el botón **Añadir** del lateral.
+2. Cambia entre mazos desde el lateral.
 3. Pega su lista y configura su fuente, idioma y calidad.
 4. Pulsa **Analizar mazos**.
 5. Revisa y corrige un mazo cada vez.
@@ -361,12 +347,6 @@ para que el siguiente mazo rellene los huecos del anterior.
         for item in st.session_state.get("deck_config_drafts")
         or [normalise_deck_config(None)]
     ]
-
-    st.caption(
-        "Los ajustes y las correcciones no se mezclan entre mazos. "
-        "Durante la exportación, el siguiente mazo rellena los huecos libres "
-        "del anterior."
-    )
 
     source_labels = {
         "Scryfall · imágenes oficiales": "scryfall",
@@ -478,7 +458,8 @@ para que el siguiente mazo rellene los huecos del anterior.
     st.session_state["deck_config_active_index"] = active_deck_index
     st.session_state["deck_config_selector_v2"] = active_deck_index
 
-    selector_columns = st.columns([6, 1, 1])
+    st.sidebar.caption("TUS MAZOS")
+    selector_columns = [st.sidebar.container(), *st.sidebar.columns(2)]
     with selector_columns[0]:
         active_deck = normalise_deck_active_index(
             st.radio(
@@ -488,7 +469,7 @@ para que el siguiente mazo rellene los huecos del anterior.
                     item,
                     deck_configs[item],
                 ),
-                horizontal=True,
+                horizontal=False,
                 label_visibility="collapsed",
                 key="deck_config_selector_v2",
             ),
@@ -497,7 +478,7 @@ para que el siguiente mazo rellene los huecos del anterior.
         st.session_state["deck_config_active_index"] = active_deck
     with selector_columns[1]:
         if st.button(
-            "➕",
+            "Añadir",
             help="Añadir mazo",
             width="stretch",
             disabled=len(deck_configs) >= 12,
@@ -511,7 +492,7 @@ para que el siguiente mazo rellene los huecos del anterior.
             st.rerun()
     with selector_columns[2]:
         if st.button(
-            "🗑️",
+            "Eliminar",
             help="Eliminar mazo actual",
             width="stretch",
             disabled=len(deck_configs) <= 1,
@@ -526,13 +507,9 @@ para que el siguiente mazo rellene los huecos del anterior.
             )
             st.rerun()
 
-    st.caption(
-        f"Editando el mazo {active_deck + 1} de {len(deck_configs)}. "
-        "El orden de esta barra será también el orden del PDF final."
-    )
     deck_position = active_deck
     base = deck_configs[deck_position]
-    st.markdown(f"### Configuración del mazo {deck_position + 1}")
+    st.subheader(base.get("deck_name") or f"Mazo {deck_position + 1}")
     list_column, settings_column = st.columns([3, 2])
 
     with list_column:
@@ -744,10 +721,14 @@ def set_active_deck(position: int) -> None:
     if not summaries:
         return
     position = min(max(position, 0), len(summaries) - 1)
+    remembered = st.session_state.setdefault("studio_selected_by_deck", {})
+    previous = active_deck_position()
+    remembered[previous] = st.session_state.get("review_selected_index", 0)
     st.session_state["active_review_deck"] = position
     indices = indices_for_deck(position, summaries)
     if indices:
-        set_review_index(indices[0])
+        selected = remembered.get(position)
+        set_review_index(selected if selected in indices else indices[0])
     st.session_state.pop("review_only_problematic", None)
     st.session_state["workspace_mode"] = "Vista del mazo"
     st.session_state["workspace_selector_version"] = (
@@ -763,6 +744,7 @@ def clear_generated_output() -> None:
         "report",
         "pdf_output_download",
         "pdf_output_signature",
+        "studio_pdf_preview",
     ):
         st.session_state.pop(key, None)
 
@@ -1786,6 +1768,12 @@ signature_matches = (
     analysis_ready
     and st.session_state.get("analysis_signature") == current_signature()
 )
+with navigation_slot:
+    requested_step = render_step_navigation(app_step, signature_matches)
+if requested_step != app_step:
+    st.session_state["app_step"] = requested_step
+    st.rerun()
+
 if app_step == 1 and analysis_ready:
     if signature_matches:
         st.info(
@@ -1862,27 +1850,29 @@ def render_gallery_grouped_section(
             unsafe_allow_html=True,
         )
         entries = list(category.cards)
-        for start in range(0, len(entries), 6):
-            columns = st.columns(6)
-            for column, (index, card) in zip(columns, entries[start : start + 6]):
+        for start in range(0, len(entries), 3):
+            columns = st.columns(3)
+            for column, (index, card) in zip(columns, entries[start : start + 3]):
                 with column:
                     with st.container(border=True):
                         preview = gallery_preview(card, mpc_client)
                         if preview is not None:
-                            _, image_column, _ = st.columns([1, 4, 1])
-                            with image_column:
-                                st.image(preview, width=105)
+                            st.image(preview, width="stretch")
                         else:
-                            st.caption("🖼️ Sin imagen")
+                            st.html('<div class="studio-empty">Sin imagen<br>en alta resolución</div>')
                         st.markdown(
                             f"**{card.source.quantity}× {card.source.name}**"
                         )
-                        st.caption(gallery_status_label(card))
-                        st.caption(gallery_printing_label(card))
+                        st.caption(
+                            gallery_status_label(card) if is_problematic(card)
+                            else f"{(card.language or 'sin idioma').upper()} · "
+                            + ("Archivo propio" if card.provider == "upload" else (card.selected_set or card.provider).upper())
+                        )
                         if st.button(
                             "Cambiar versión",
                             key=f"gallery_edit_{index}",
                             width="stretch",
+                            type="primary" if st.session_state.get("review_selected_index") == index else "secondary",
                         ):
                             open_card_editor(index)
                             st.rerun()
@@ -1897,20 +1887,13 @@ def render_deck_gallery() -> None:
     deck_indices = indices_for_deck(deck_position, summaries)
     deck_cards = [cards[index] for index in deck_indices]
 
-    st.subheader(
-        f"2. Mazo {deck_position + 1} de {len(summaries)} · "
-        f"{summary['name']}"
-    )
+    st.subheader(summary["name"])
 
     problem_count = sum(is_problematic(card) for card in deck_cards)
-    summary_columns = st.columns([1, 3])
-    with summary_columns[0]:
-        st.metric("Pendientes", problem_count)
-    with summary_columns[1]:
-        st.caption(
-            f"{sum(card.source.quantity for card in deck_cards)} cartas · "
-            f"{len(deck_cards)} entradas"
-        )
+    st.caption(
+        f"{sum(card.source.quantity for card in deck_cards)} cartas · "
+        f"{problem_count} pendientes"
+    )
 
     query = ""
     provider = "Todos"
@@ -1990,21 +1973,14 @@ def render_deck_gallery() -> None:
     try:
         if problematic_indices:
             render_gallery_grouped_section(
-                "⚠️ Cartas con problemas",
-                "Estas cartas necesitan revisión y pertenecen "
-                "únicamente al mazo activo.",
+                "Pendientes",
+                "",
                 problematic_indices,
                 cards,
                 mpc_client,
             )
-        else:
-            st.success("Mazo listo.")
-
         if healthy_indices:
-            with st.expander(
-                f"Ver las {len(healthy_indices)} cartas correctas",
-                expanded=False,
-            ):
+            with st.container():
                 render_gallery_grouped_section(
                     "",
                     "",
@@ -2041,7 +2017,7 @@ def render_version_candidate_preview(
                 st.caption(f"Cara {start + offset + 1}")
 
 
-def render_selected_preview(card: ResolvedCard) -> None:
+def render_selected_preview(card: ResolvedCard, *, compact: bool = False) -> None:
     if card.provider == "mpcfill" and card.scryfall_data:
         face = card.faces[0] if card.faces else None
         try:
@@ -2052,9 +2028,9 @@ def render_selected_preview(card: ResolvedCard) -> None:
                     crop_shift_x=face.crop_shift_x if face else 0,
                     crop_shift_y=face.crop_shift_y if face else 0,
                 )
-            _, image_column, _ = st.columns([1, 3, 1])
+            image_column = st.container() if compact else st.columns([1, 3, 1])[1]
             with image_column:
-                st.image(data, width=210)
+                st.image(data, width=170 if compact else 210)
         except MpcFillError as exc:
             st.warning(str(exc))
     else:
@@ -2067,9 +2043,9 @@ def render_selected_preview(card: ResolvedCard) -> None:
                 f"Versión seleccionada con {len(urls)} caras físicas."
             )
         for url in urls:
-            _, image_column, _ = st.columns([1, 3, 1])
+            image_column = st.container() if compact else st.columns([1, 3, 1])[1]
             with image_column:
-                st.image(url, width=210)
+                st.image(url, width=170 if compact else 210)
 
 
 def render_crop_editor(index: int, card: ResolvedCard) -> None:
@@ -2235,7 +2211,7 @@ def render_candidate_actions(
             st.rerun()
 
 
-def render_review_panel() -> None:
+def render_review_panel(*, embedded: bool = False) -> None:
     cards: list[ResolvedCard] = st.session_state["resolved_cards"]
     summaries = stored_deck_summaries()
     deck_position = active_deck_position()
@@ -2246,18 +2222,15 @@ def render_review_panel() -> None:
         if is_problematic(cards[index])
     ]
 
-    back_col, title_col = st.columns([1, 4])
-    with back_col:
+    if not embedded:
         if st.button("← Volver al mazo", width="stretch"):
             set_workspace_mode("Vista del mazo")
             st.rerun()
-    with title_col:
-        st.subheader(
-            f"Editar versiones · Mazo {deck_position + 1}: "
-            f"{summary['name']}"
-        )
+        st.subheader(f"Editar versiones · {summary['name']}")
+    else:
+        st.caption("CARTA SELECCIONADA")
 
-    with st.expander("Ver tabla completa", expanded=False):
+    with st.expander("Ver tabla completa", expanded=False) if not embedded else st.sidebar.expander("Ver tabla completa", expanded=False):
         st.dataframe(
             pd.DataFrame(
                 [
@@ -2269,9 +2242,8 @@ def render_review_panel() -> None:
             hide_index=True,
         )
 
-    only_problematic = st.checkbox(
-        "Mostrar solo cartas problemáticas",
-        value=bool(problem_indices),
+    only_problematic = False if embedded else st.checkbox(
+        "Mostrar solo cartas problemáticas", value=bool(problem_indices),
         key="review_only_problematic",
     )
     review_indices = (
@@ -2290,6 +2262,7 @@ def render_review_panel() -> None:
         options=review_indices,
         index=review_indices.index(current),
         format_func=lambda index: (
+            f"{cards[index].source.quantity}× {cards[index].source.name}" if embedded else
             f"{cards[index].source.quantity}× {cards[index].source.name} "
             f"[{(cards[index].source.set_code or '?').upper()} "
             f"{cards[index].source.collector_number or '?'}] — "
@@ -2309,25 +2282,27 @@ def render_review_panel() -> None:
     image_quality = deck_config["image_quality"]
 
     position = review_indices.index(selected_index)
-    st.progress(
-        (position + 1) / len(review_indices),
-        text=f"Carta {position + 1} de {len(review_indices)}",
-    )
+    if not embedded:
+        st.progress(
+            (position + 1) / len(review_indices),
+            text=f"Carta {position + 1} de {len(review_indices)}",
+        )
 
-    nav = st.columns([1, 2, 1])
+    nav = st.columns(2 if embedded else [1, 2, 1])
     with nav[0]:
         if st.button("← Anterior", disabled=position == 0, width="stretch"):
             set_review_index(previous_index(review_indices, selected_index))
             st.rerun()
-    with nav[1]:
-        if st.button(
-            "Mantener actual y continuar",
-            disabled=position == len(review_indices) - 1,
-            width="stretch",
-        ):
-            set_review_index(next_index(review_indices, selected_index))
-            st.rerun()
-    with nav[2]:
+    if not embedded:
+        with nav[1]:
+            if st.button(
+                "Mantener actual y continuar",
+                disabled=position == len(review_indices) - 1,
+                width="stretch",
+            ):
+                set_review_index(next_index(review_indices, selected_index))
+                st.rerun()
+    with nav[-1]:
         if st.button(
             "Siguiente →",
             disabled=position == len(review_indices) - 1,
@@ -2337,16 +2312,17 @@ def render_review_panel() -> None:
             st.rerun()
 
     selected = cards[selected_index]
-    st.caption(
-        "Solo estás editando cartas de este mazo. Las selecciones de "
-        "los demás mazos permanecen intactas."
-    )
-    selected_col, alternatives_col = st.columns([1, 2])
+    if embedded:
+        st.subheader(selected.source.name)
+        selected_col, alternatives_col = st.container(), st.container()
+    else:
+        selected_col, alternatives_col = st.columns([1, 2])
     with selected_col:
-        st.markdown("#### Versión seleccionada")
-        render_selected_preview(selected)
-        st.markdown("##### Detalles")
-        st.caption(
+        if not embedded:
+            st.markdown("#### Versión seleccionada")
+        render_selected_preview(selected, compact=embedded)
+        with st.expander("Detalles de la imagen", expanded=False):
+            st.caption(
             f"**Carta:** {selected.source.name}  \n"
             f"**Cantidad:** {selected.source.quantity}  \n"
             f"**Elegida:** {(selected.selected_set or '?').upper()} "
@@ -2354,13 +2330,13 @@ def render_review_panel() -> None:
             f"**Fuente:** {selected.provider}  \n"
             f"**Idioma:** {(selected.language or '?').upper()}  \n"
             f"**Calidad:** {selected.image_status or 'desconocida'}  \n"
-            f"**Estado:** {gallery_status_label(selected)}"
-        )
+                f"**Estado:** {gallery_status_label(selected)}"
+            )
         reasons = problem_reasons(selected)
         if reasons:
             st.warning("Revisar: " + ", ".join(reasons))
         else:
-            st.success("Selección correcta.")
+            st.caption(f"Imagen lista · {(selected.language or 'sin idioma').upper()} · {selected.source.quantity} copias")
         render_crop_editor(selected_index, selected)
         render_allocations(selected_index, selected)
 
@@ -2385,7 +2361,7 @@ def render_review_panel() -> None:
         source = st.radio(
             "Fuente",
             source_options,
-            horizontal=True,
+            horizontal=not embedded,
             key=source_state_key,
         )
         search_names = printing_search_names(selected)
@@ -2580,9 +2556,9 @@ def render_review_panel() -> None:
             )
             if not alternatives:
                 st.info("No se encontraron impresiones con esos filtros.")
-            columns = st.columns(3)
+            columns = st.columns(1 if embedded else 3)
             for alt_index, candidate in enumerate(alternatives):
-                with columns[alt_index % 3]:
+                with columns[alt_index % len(columns)]:
                     with st.container(border=True):
                         urls = preview_urls(candidate)
                         render_version_candidate_preview(urls)
@@ -2713,9 +2689,9 @@ def render_review_panel() -> None:
                             "archivo parece incluir el set code "
                             f"\"{selected.source.set_code.upper()}\"."
                         )
-                    columns = st.columns(3)
+                    columns = st.columns(1 if embedded else 3)
                     for design_index, candidate in enumerate(designs):
-                        with columns[design_index % 3]:
+                        with columns[design_index % len(columns)]:
                             with st.container(border=True):
                                 try:
                                     preview = client.preview_bytes(
@@ -2937,14 +2913,46 @@ def render_deck_review_navigation(
 
 @st.fragment
 def render_workspace() -> None:
-    options = ["Vista del mazo", "Editar cartas"]
-    current = st.session_state.get("workspace_mode", options[0])
-    if current not in options:
-        current = options[0]
-    if current == "Vista del mazo":
-        render_deck_gallery()
-    else:
-        render_review_panel()
+    with st.container(key="studio_workspace"):
+        gallery, editor = st.columns([1.6, 1], gap="large")
+        with gallery:
+            with st.container(key="studio_gallery"):
+                render_deck_gallery()
+        with editor:
+            with st.container(key="studio_editor"):
+                render_review_panel(embedded=True)
+
+
+def render_studio_decks() -> None:
+    summaries = stored_deck_summaries()
+    cards = st.session_state["resolved_cards"]
+    position = active_deck_position()
+    codes = assign_deck_codes([str(item["name"]) for item in summaries])
+    with st.sidebar:
+        st.caption("TUS MAZOS")
+        for index, summary in enumerate(summaries):
+            indices = indices_for_deck(index, summaries)
+            pending = sum(is_problematic(cards[item]) for item in indices)
+            if st.button(
+                str(summary["name"]), key=f"studio_deck_{index}",
+                type="primary" if index == position else "secondary", width="stretch",
+            ):
+                set_active_deck(index)
+                st.session_state["app_step"] = 2
+                st.rerun()
+            st.caption(
+                ("Activo · " if index == position else "")
+                + f"{codes[index]} · {sum(cards[item].source.quantity for item in indices)} cartas"
+                f" · {pending} pendientes"
+            )
+        st.divider()
+        with st.expander("Acciones del mazo", expanded=False):
+            if st.button("Reintentar pendientes", key=f"retry_pending_{position}", width="stretch"):
+                if reanalyse_active_deck(only_problematic=True, preserve_customised=True):
+                    st.rerun()
+            if st.button("Cambiar ajustes", key=f"change_settings_{position}", width="stretch"):
+                st.session_state["app_step"] = 1
+                st.rerun()
 
 
 def render_export_panel() -> None:
@@ -3090,6 +3098,7 @@ def render_export_panel() -> None:
         for key in (
             "pdf_output_download",
             "pdf_output_signature",
+            "studio_pdf_preview",
         ):
             st.session_state.pop(key, None)
 
@@ -3224,22 +3233,30 @@ def render_export_panel() -> None:
         )
     else:
         pdf_download = st.session_state["pdf_output_download"]
-        if data_dir() is not None:
-            render_save_button(
-                "Guardar PDF" if pdf_download["part_count"] == 1 else "Guardar ZIP",
-                pdf_download["data"], pdf_download["file_name"],
-                "Exportaciones", primary=True,
-            )
-        else:
-            st.download_button(
-                pdf_download["label"],
-                data=pdf_download["data"],
-                file_name=pdf_download["file_name"],
-                mime=pdf_download["mime"],
-                type="primary",
-                width="stretch",
-                on_click="ignore",
-            )
+        with st.container(key="studio_pdf_result"):
+            preview_column, download_column = st.columns([1.6, 1], gap="large")
+            with preview_column:
+                render_generated_preview(pdf_download, pdf_output_signature)
+        # Keep saving available even if preview rendering fails.
+        with download_column:
+            st.subheader("PDF preparado")
+            st.caption("Guarda el archivo e imprime al 100 %, sin ajustar a página.")
+            if data_dir() is not None:
+                render_save_button(
+                    "Guardar PDF" if pdf_download["part_count"] == 1 else "Guardar ZIP",
+                    pdf_download["data"], pdf_download["file_name"],
+                    "Exportaciones", primary=True,
+                )
+            else:
+                st.download_button(
+                    pdf_download["label"],
+                    data=pdf_download["data"],
+                    file_name=pdf_download["file_name"],
+                    mime=pdf_download["mime"],
+                    type="primary",
+                    width="stretch",
+                    on_click="ignore",
+                )
 
         if pdf_download["part_count"] == 1:
             st.caption(
@@ -3268,15 +3285,10 @@ def render_export_panel() -> None:
                 "Se ha mantenido unida para no separar el frente de su "
                 "reverso."
             )
+if app_step in {2, 3} and signature_matches:
+    render_studio_decks()
+
 if app_step == 2 and signature_matches:
-    render_deck_review_navigation(
-        location="top",
-        show_selector=True,
-    )
-    st.caption(
-        "Cada mazo conserva su propia configuración y sus propias "
-        "correcciones. Cambiar de mazo no modifica el resto."
-    )
     render_workspace()
     render_deck_review_navigation(
         location="bottom",
